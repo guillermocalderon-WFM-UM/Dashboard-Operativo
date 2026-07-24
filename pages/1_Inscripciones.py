@@ -962,7 +962,8 @@ pendientes_doc = int((b[b["CRUCE COMPL"] == 0][_DOC_COLS].isin(_DOC_PENDIENTE)).
 _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
-_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Contactabilidad", icon="📞")
+_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
+_leads_pg = st.Page("pages/5_Leads.py", title="Leads", icon="🎯")
 
 # ─────────────────────────────────────────────
 # ENCABEZADO
@@ -978,7 +979,7 @@ with st.container(key="hdrbanner"):
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.6, 1.2], vertical_alignment="center")
+    nb1, nb2, nb3, nb4, nb5, nb6, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.1, 1.0], vertical_alignment="center")
     with nb1:
         if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
             st.switch_page(_home_pg)
@@ -991,8 +992,11 @@ with st.container(key="hdrbanner"):
         if st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch"):
             st.switch_page(_cuart_pg)
     with nb5:
-        if st.button("📞 Contactabilidad", key="hdr_cont", width="stretch"):
+        if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
+    with nb6:
+        if st.button("🎯 Leads", key="hdr_leads", width="stretch"):
+            st.switch_page(_leads_pg)
 
 # ─────────────────────────────────────────────
 # KPIs

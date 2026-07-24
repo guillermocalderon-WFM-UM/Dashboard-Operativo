@@ -1,19 +1,14 @@
 import base64
 import io
 import urllib.parse
+from datetime import date
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Hojas de Google Sheets (compartidas como "Cualquiera con el enlace: Lector").
-# Cuartiles cruza 3 hojas: Base de Matrículas (fuente del cuartil), Base de Inscripciones
-# (solo para mostrar su real/meta) y Metas (respaldo para que salgan todos los asesores).
-_SHEET_ID_MATRICULAS = "1yh02o6obFpiMHUenyaBX6ZKmTivdSrY5_usVisb0I74"
-_SHEET_ID_INSCRIPCIONES = "14DOLvF_d-qhd-VBE62M6hnfqtOH3EYcggjBLgwHiC8w"
-_SHEET_ID_METAS = "1byJ5Sw_P_xKew5xMbWz9KQSTQfc_J-Fm"
-_SHEET_ID_LEADS = "1eJYJxr_9qOF4yTLjXU1fr1P9asoXdnzoY_MkWME9FhY"
+# Hoja de Google Sheets (compartida como "Cualquiera con el enlace: Lector").
+_SHEET_ID = "1eJYJxr_9qOF4yTLjXU1fr1P9asoXdnzoY_MkWME9FhY"
 
 
 def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
@@ -24,10 +19,10 @@ def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
 
 
 # ─────────────────────────────────────────────
-# COLORES (mismo esquema que Matrículas / Inscripciones)
+# COLORES (mismo esquema que el resto del dashboard, acento rosa como en el home)
 # ─────────────────────────────────────────────
 COLOR_PRIMARY = "#065F46"
-COLOR_ACCENT  = "#0EA5E9"
+COLOR_ACCENT  = "#F43F5E"
 COLOR_SUCCESS = "#10B981"
 COLOR_WARNING = "#F59E0B"
 COLOR_DANGER  = "#EF4444"
@@ -37,12 +32,11 @@ _MES_ORDEN = [
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
 
-_COLOR_CUARTIL = {"Q1": COLOR_DANGER, "Q2": COLOR_WARNING, "Q3": COLOR_ACCENT, "Q4": COLOR_SUCCESS}
-_CUARTIL_NUM = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+_PALETA = ["#F43F5E", "#38BDF8", "#818CF8", "#34D399", "#F59E0B", "#A78BFA", "#FB923C", "#2DD4BF"]
 
 
 # ─────────────────────────────────────────────
-# DESCARGA (idéntico a Matrículas / Inscripciones)
+# DESCARGA (idéntico al resto de páginas)
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def _excel_bytes(df):
@@ -70,41 +64,13 @@ def df_descarga(df, nombre_archivo, **kwargs):
 # CARGA DE DATOS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
-def _cargar_matriculas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_MATRICULAS, "Base"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df = df[df["Cedula"].notna()].copy()
-    df["_CC"] = pd.to_numeric(df["Documento"], errors="coerce").astype("Int64")
-    df["_ASESOR"] = df["Asesor.1"].fillna(df["Asesor"]).fillna("Sin asignar")
-    df["_SUPERVISOR"] = df["Supervisor.1"].fillna("Sin asignar")
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_inscripciones() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_INSCRIPCIONES, "Base"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df = df[df["DNI"].notna()].copy()
-    df["_CC"] = pd.to_numeric(df["CEDULA AGENT"], errors="coerce").astype("Int64")
-    df["_ASESOR"] = df["NOMBRE AGENT"].fillna("Sin asignar")
-    df["_SUPERVISOR"] = df["SUPERVISOR"].fillna("Sin asignar")
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_metas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_METAS, "Consolidado"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df["_CC"] = pd.to_numeric(df["CC"], errors="coerce").astype("Int64")
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
 def _cargar_leads() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_LEADS, "Resumen diario"), encoding="utf-8", low_memory=False)
+    df = pd.read_csv(_url_hoja(_SHEET_ID, "Resumen diario"), encoding="utf-8", low_memory=False)
     df.columns = df.columns.str.strip()
     df["_FECHA"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
     df = df.dropna(subset=["_FECHA"]).copy()
+    df["_USUARIO"] = df["Usuario"].astype(str).str.strip().str.lower()
+    df["_NOMBRE"] = df["Nombre"].fillna(df["Usuario"])
     df["_CC"] = pd.to_numeric(df["Cedula"], errors="coerce").astype("Int64")
     df["_INSUMO"] = pd.to_numeric(df["Leads asignados ese día"], errors="coerce").fillna(0).astype(int)
     df["MES"] = df["_FECHA"].dt.month.map(lambda m: _MES_ORDEN[int(m) - 1])
@@ -112,257 +78,107 @@ def _cargar_leads() -> pd.DataFrame:
     return df
 
 
-_COLS_CLASIFICACION = [
-    "ASESOR", "SUPERVISOR", "META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO",
-    "CUMPL_INSC", "CUMPL_MAT", "CUARTIL",
-]
+def _ultimo_valor(serie: pd.Series) -> str:
+    """Última asignación no vacía de Supervisor/Coordinador en el rango (puede ir llenándose con el tiempo)."""
+    s = serie.dropna()
+    return str(s.iloc[-1]) if len(s) else "Sin asignar"
 
 
-def _tabla_clasificacion(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame, mes_sel: str) -> pd.DataFrame:
-    """Universo del mes = todos los asesores con Meta asignada ese MES/AÑO (Metas es el
-    respaldo para que aparezcan aunque tengan 0 real). El cuartil se calcula sobre REAL_MAT
-    de ese universo completo — un asesor en 0 matrículas es un dato de desempeño válido,
-    no se excluye."""
-    anios = metas.loc[metas["MES"] == mes_sel, "AÑO"].dropna()
-    if not len(anios):
-        return pd.DataFrame(columns=_COLS_CLASIFICACION)
-    anio_sel = int(anios.mode().iat[0])
-
-    m = metas[(metas["MES"] == mes_sel) & (metas["AÑO"] == anio_sel)]
-    meta_asesor = (
-        m.dropna(subset=["_CC"]).drop_duplicates("_CC").set_index("_CC")
-        .rename(columns={
-            "NOMBRE ASESOR": "_ASESOR_META", "SUPERVISOR": "_SUPERVISOR_META",
-            "Meta inscripciones": "META_INSC", "Meta matriculas": "META_MAT",
-        })
-        [["_ASESOR_META", "_SUPERVISOR_META", "META_INSC", "META_MAT"]]
-    )
-
-    real_mat = (
-        mat[(mat["MES"] == mes_sel) & (mat["AÑO"] == anio_sel)].dropna(subset=["_CC"])
-        .groupby("_CC").agg(REAL_MAT=("_CC", "size"), _ASESOR_MAT=("_ASESOR", "first"), _SUPERVISOR_MAT=("_SUPERVISOR", "first"))
-    )
-    real_insc = (
-        insc[(insc["MES"] == mes_sel) & (insc["AÑO"] == anio_sel)].dropna(subset=["_CC"])
-        .groupby("_CC").agg(REAL_INSC=("_CC", "size"), _ASESOR_INSC=("_ASESOR", "first"), _SUPERVISOR_INSC=("_SUPERVISOR", "first"))
-    )
-    insumo_mes = (
-        leads[(leads["MES"] == mes_sel) & (leads["AÑO"] == anio_sel)].dropna(subset=["_CC"])
-        .groupby("_CC")["_INSUMO"].sum().rename("INSUMO")
-    )
-
-    tabla = meta_asesor.join(real_mat, how="outer").join(real_insc, how="outer").join(insumo_mes, how="left")
-    if not len(tabla):
-        return pd.DataFrame(columns=_COLS_CLASIFICACION)
-
-    for c in ("META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO"):
-        tabla[c] = tabla[c].fillna(0).astype(int)
-
-    tabla["ASESOR"] = tabla["_ASESOR_MAT"].fillna(tabla["_ASESOR_INSC"]).fillna(tabla["_ASESOR_META"]).fillna("Sin asignar")
-    tabla["SUPERVISOR"] = tabla["_SUPERVISOR_MAT"].fillna(tabla["_SUPERVISOR_INSC"]).fillna(tabla["_SUPERVISOR_META"]).fillna("Sin asignar")
-
-    tabla["CUMPL_INSC"] = np.where(
-        tabla["META_INSC"] > 0, tabla["REAL_INSC"] / tabla["META_INSC"] * 100,
-        np.where(tabla["REAL_INSC"] > 0, 100.0, 0.0),
-    )
-    tabla["CUMPL_MAT"] = np.where(
-        tabla["META_MAT"] > 0, tabla["REAL_MAT"] / tabla["META_MAT"] * 100,
-        np.where(tabla["REAL_MAT"] > 0, 100.0, 0.0),
-    )
-
-    if len(tabla) >= 4:
-        tabla["CUARTIL"] = pd.qcut(tabla["REAL_MAT"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
-    else:
-        tabla["CUARTIL"] = "Q4"
-
-    tabla = tabla[_COLS_CLASIFICACION].sort_values("REAL_MAT", ascending=False)
-    return tabla.reset_index(drop=True)
-
-
-def _historico_cuartiles(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame, meses: list[str]) -> pd.DataFrame:
+def _tabla_usuarios(d: pd.DataFrame) -> pd.DataFrame:
     filas = []
-    for mes in meses:
-        t = _tabla_clasificacion(mat, insc, metas, leads, mes)
-        if len(t):
-            t = t[["ASESOR", "CUARTIL"]].copy()
-            t["MES"] = mes
-            filas.append(t)
-    if not filas:
-        return pd.DataFrame(columns=["ASESOR", "MES", "CUARTIL"])
-    return pd.concat(filas, ignore_index=True)
+    for usuario, g in d.sort_values("_FECHA").groupby("_USUARIO"):
+        filas.append({
+            "USUARIO": g["Usuario"].iloc[-1],
+            "NOMBRE": g["_NOMBRE"].iloc[-1],
+            "SUPERVISOR": _ultimo_valor(g["Supervisor"]),
+            "COORDINADOR": _ultimo_valor(g["Coordinador"]),
+            "INSUMO": int(g["_INSUMO"].sum()),
+            "DIAS": g["_FECHA"].nunique(),
+        })
+    tabla = pd.DataFrame(filas)
+    if not len(tabla):
+        return pd.DataFrame(columns=["USUARIO", "NOMBRE", "SUPERVISOR", "COORDINADOR", "INSUMO", "DIAS", "PROMEDIO_DIA"])
+    tabla["PROMEDIO_DIA"] = (tabla["INSUMO"] / tabla["DIAS"]).round(1)
+    return tabla.sort_values("INSUMO", ascending=False).reset_index(drop=True)
 
 
 # ─────────────────────────────────────────────
-# TABLA HTML — Clasificación de asesores
+# TABLA HTML
 # ─────────────────────────────────────────────
-def _cumpl_cell_html(pct: float) -> str:
-    color = COLOR_SUCCESS if pct >= 100 else (COLOR_WARNING if pct >= 70 else COLOR_DANGER)
-    return (
-        "<td class='cumpl-cell'><div class='cumpl-wrap'>"
-        f"<div class='cumpl-bar-track'><div class='cumpl-bar-fill' style='width:{min(pct, 100):.0f}%;background:{color}'></div></div>"
-        f"<span class='cumpl-pct' style='color:{color}'>{pct:.0f}%</span>"
-        "</div></td>"
-    )
-
-
-def _fila_clasificacion_html(row) -> str:
-    color_q = _COLOR_CUARTIL.get(row["CUARTIL"], "#94A3B8")
+def _fila_usuario_html(row) -> str:
     return (
         "<tr>"
-        f"<td class='sup-cell'>{row['ASESOR']}</td>"
+        f"<td class='sup-cell'>{row['NOMBRE']}</td>"
+        f"<td>{row['USUARIO']}</td>"
         f"<td>{row['SUPERVISOR']}</td>"
-        f"<td>{row['META_INSC']}</td>"
-        f"<td>{row['META_MAT']}</td>"
-        f"<td>{row['REAL_INSC']}</td>"
-        f"<td>{row['REAL_MAT']}</td>"
+        f"<td>{row['COORDINADOR']}</td>"
         f"<td>{row['INSUMO']}</td>"
-        f"{_cumpl_cell_html(row['CUMPL_INSC'])}"
-        f"{_cumpl_cell_html(row['CUMPL_MAT'])}"
-        f"<td><span class='cuartil-badge' style='background:{color_q}22;color:{color_q};border-color:{color_q}66'>{row['CUARTIL']}</span></td>"
+        f"<td>{row['PROMEDIO_DIA']}</td>"
         "</tr>"
     )
 
 
-def _render_tabla_clasificacion(tabla: pd.DataFrame):
-    rows_html = "".join(_fila_clasificacion_html(r) for _, r in tabla.iterrows())
+def _render_tabla_usuarios(tabla: pd.DataFrame):
+    rows_html = "".join(_fila_usuario_html(r) for _, r in tabla.iterrows())
     table_html = (
         "<div class='avance-tabla-wrap'><table class='avance-tabla'><thead><tr>"
-        "<th class='grp-sup'>Asesor</th><th class='grp-sup'>Supervisor</th>"
-        "<th class='grp-total'>Meta Insc.</th><th class='grp-total'>Meta Mat.</th>"
-        "<th class='grp-total'>Insc.</th><th class='grp-total'>Mat.</th><th class='grp-total'>Insumo</th>"
-        "<th class='grp-cumpl'>Cumpl. Insc.</th><th class='grp-cumpl'>Cumpl. Mat.</th>"
-        "<th class='grp-total'>Cuartil</th>"
+        "<th class='grp-sup'>Nombre</th><th class='grp-sup'>Usuario</th>"
+        "<th class='grp-sup'>Supervisor</th><th class='grp-sup'>Coordinador</th>"
+        "<th class='grp-total'>Insumo</th><th class='grp-total'>Prom./día</th>"
         "</tr></thead><tbody>"
         f"{rows_html}"
         "</tbody></table></div>"
     )
-    with st.container(key="tabla_clasificacion"):
+    with st.container(key="tabla_usuarios_leads"):
         st.markdown(table_html, unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────────
-# LISTAS "TOP" (rankings)
-# ─────────────────────────────────────────────
-def _iniciales(nombre) -> str:
-    partes = str(nombre).strip().split()
-    if not partes:
-        return "?"
-    return (partes[0][0] + (partes[1][0] if len(partes) > 1 else "")).upper()
-
-
-def _top_lista_html(filas: list[tuple[str, str, str]], color: str) -> str:
-    rows = []
-    for i, (nombre, meta, valor) in enumerate(filas, start=1):
-        rows.append(
-            f"<div class='top-row' style='--ac:{color}'>"
-            f"<span class='top-rank'>{i:02d}</span>"
-            f"<div class='top-avatar'>{_iniciales(nombre)}</div>"
-            f"<div class='top-body'><div class='top-name'>{nombre}</div><div class='top-meta'>{meta}</div></div>"
-            f"<span class='top-value' style='color:{color}'>{valor}</span>"
-            "</div>"
-        )
-    return "<div class='top-list'>" + "".join(rows) + "</div>"
 
 
 # ─────────────────────────────────────────────
 # GRÁFICOS
 # ─────────────────────────────────────────────
-def _fig_conversion(tabla: pd.DataFrame, min_insumo: int = 30, top_n: int = 15) -> go.Figure:
-    """Conversión = Matrículas reales / Insumo (leads) recibidos, en %. Sólo asesores con
-    insumo suficiente (min_insumo) para que el % no sea ruido de muestras muy chicas."""
-    d = tabla[tabla["INSUMO"] >= min_insumo].copy()
-    d["CONVERSION"] = d["REAL_MAT"] / d["INSUMO"] * 100
-    d = d.sort_values("CONVERSION", ascending=False).head(top_n).sort_values("CONVERSION")
-
-    mediana = d["CONVERSION"].median() if len(d) else 0
-    colores = [COLOR_SUCCESS if v >= mediana else COLOR_WARNING for v in d["CONVERSION"].tolist()]
-
+def _fig_barra_horizontal(indice, valores, color, height=None, top_n=None):
+    # ojo: si indice/valores llegan como Series (con su propio índice numérico),
+    # pd.Series(valores, index=indice) los REALINEA por índice en vez de emparejarlos
+    # por posición -> todo termina en NaN. .to_numpy() lo evita.
+    indice = indice.to_numpy() if hasattr(indice, "to_numpy") else indice
+    valores = valores.to_numpy() if hasattr(valores, "to_numpy") else valores
+    serie = pd.Series(valores, index=indice).sort_values()
+    if top_n:
+        serie = serie.tail(top_n)
     fig = go.Figure(go.Bar(
-        x=d["CONVERSION"].tolist(), y=[str(a)[:34] for a in d["ASESOR"].tolist()], orientation="h",
-        marker=dict(color=colores),
-        text=[f"{v:.1f}%" for v in d["CONVERSION"].tolist()], textposition="outside", cliponaxis=False,
+        x=serie.values, y=[str(i)[:38] for i in serie.index], orientation="h",
+        marker=dict(color=color),
+        text=serie.values, textposition="outside", cliponaxis=False,
         textfont=dict(size=10, color="#CBD3F2", family="Inter"),
-        customdata=d["INSUMO"].tolist(),
-        hovertemplate="<b>%{y}</b><br>%{x:.1f}% conversión<br>%{customdata} leads recibidos<extra></extra>",
     ))
     fig.update_layout(
-        height=max(280, len(d) * 26 + 60), margin=dict(l=10, r=50, t=10, b=10),
+        height=height or max(280, len(serie) * 24 + 60), margin=dict(l=10, r=50, t=10, b=10),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", ticksuffix="%",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
+                   automargin=True),
         yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
                    automargin=True),
     )
     return fig
 
 
-def _fig_cuartil_supervisor(tabla: pd.DataFrame) -> go.Figure:
-    grp = tabla.groupby(["SUPERVISOR", "CUARTIL"]).size().unstack(fill_value=0)
-    for q in ["Q1", "Q2", "Q3", "Q4"]:
-        if q not in grp.columns:
-            grp[q] = 0
-    grp = grp[["Q1", "Q2", "Q3", "Q4"]]
-    grp = grp.loc[grp.sum(axis=1).sort_values().index]
-
-    fig = go.Figure()
-    for q in ["Q1", "Q2", "Q3", "Q4"]:
-        fig.add_trace(go.Bar(
-            y=grp.index, x=grp[q], orientation="h", name=q,
-            marker=dict(color=_COLOR_CUARTIL[q]),
-        ))
-    fig.update_layout(
-        barmode="stack", height=max(280, len(grp) * 26 + 60), margin=dict(l=10, r=20, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
-                   automargin=True),
-    )
-    return fig
-
-
-def _fig_evolucion(hist: pd.DataFrame, meses_orden: list[str], top_n: int = 30) -> go.Figure:
-    d = hist.copy()
-    d["_NUM"] = d["CUARTIL"].map(_CUARTIL_NUM)
-    piv = d.pivot_table(index="ASESOR", columns="MES", values="_NUM", aggfunc="first")
-    piv = piv.reindex(columns=[m for m in meses_orden if m in piv.columns])
-
-    # Orden: primero quién tiene más meses con dato (más "evolución" que mostrar),
-    # y entre empates el de mejor cuartil promedio. Sin este tope, con 200+ asesores
-    # el heatmap crecía sin límite (scroll interminable).
-    meses_con_dato = piv.notna().sum(axis=1)
-    promedio = piv.mean(axis=1, skipna=True)
-    orden = pd.DataFrame({"meses": meses_con_dato, "prom": promedio}).sort_values(
-        ["meses", "prom"], ascending=[False, False]
-    ).index
-    piv = piv.loc[orden]
-    if top_n:
-        piv = piv.head(top_n)
-
-    fig = go.Figure(go.Heatmap(
-        z=piv.values, x=list(piv.columns), y=list(piv.index),
-        colorscale=[
-            [0.0, _COLOR_CUARTIL["Q1"]], [0.33, _COLOR_CUARTIL["Q1"]],
-            [0.34, _COLOR_CUARTIL["Q2"]], [0.66, _COLOR_CUARTIL["Q2"]],
-            [0.67, _COLOR_CUARTIL["Q3"]], [0.99, _COLOR_CUARTIL["Q3"]],
-            [1.0, _COLOR_CUARTIL["Q4"]],
-        ],
-        zmin=1, zmax=4,
-        xgap=3, ygap=3,
-        colorbar=dict(title="Cuartil", tickvals=[1.35, 2.0, 2.65, 3.5], ticktext=["Q1", "Q2", "Q3", "Q4"],
-                      tickfont=dict(color="rgba(255,255,255,0.7)", size=10), outlinewidth=0),
-        hovertemplate="<b>%{y}</b><br>%{x}: Q%{z}<extra></extra>",
+def _fig_tendencia(d: pd.DataFrame) -> go.Figure:
+    serie = d.groupby(d["_FECHA"].dt.date)["_INSUMO"].sum().sort_index()
+    fig = go.Figure(go.Scatter(
+        x=list(serie.index), y=list(serie.values), mode="lines+markers",
+        line=dict(color=COLOR_ACCENT, width=2.5, shape="spline", smoothing=0.7),
+        marker=dict(size=5, color=COLOR_ACCENT, line=dict(color="rgba(8,6,15,0.6)", width=1)),
+        fill="tozeroy", fillcolor="rgba(244,63,94,0.12)",
+        hovertemplate="<b>%{x}</b><br>%{y} leads<extra></extra>",
     ))
     fig.update_layout(
-        height=max(300, len(piv) * 22 + 80), margin=dict(l=10, r=10, t=10, b=30),
+        height=300, margin=dict(l=40, r=20, t=10, b=30),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=10, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(side="bottom", tickfont=dict(size=10, color="rgba(255,255,255,0.62)"), automargin=True),
-        yaxis=dict(tickfont=dict(size=9, color="rgba(255,255,255,0.62)"), automargin=True, autorange="reversed"),
+        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
+        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=True),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.06)", title="Leads asignados",
+                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=True),
     )
     return fig
 
@@ -381,12 +197,8 @@ except FileNotFoundError:
 # ─────────────────────────────────────────────
 # CARGA
 # ─────────────────────────────────────────────
-mat_full = _cargar_matriculas()
-insc_full = _cargar_inscripciones()
-metas_full = _cargar_metas()
 leads_full = _cargar_leads()
-
-meses_disponibles = [m for m in _MES_ORDEN if m in mat_full["MES"].unique()]
+hoy = date.today()
 
 # ─────────────────────────────────────────────
 # SIDEBAR — FILTROS
@@ -422,11 +234,15 @@ with st.sidebar:
         <div class='sbh-rule'></div>
     </div>""", unsafe_allow_html=True)
 
-    if meses_disponibles:
-        mes_sel = st.selectbox("Mes", meses_disponibles, index=len(meses_disponibles) - 1)
+    if len(leads_full):
+        f_min, f_max = leads_full["_FECHA"].dt.date.min(), leads_full["_FECHA"].dt.date.max()
     else:
-        mes_sel = None
-        st.caption("⚠️ Sin datos de matrículas para cuartilizar.")
+        f_min = f_max = hoy
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        fecha_ini = st.date_input("Desde", value=f_min, min_value=f_min, max_value=f_max)
+    with col_f2:
+        fecha_fin = st.date_input("Hasta", value=f_max, min_value=f_min, max_value=f_max)
 
     st.markdown("""<div class='sbh'>
         <div class='sbh-num' style='color:#34D399!important;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.22)'>02</div>
@@ -434,9 +250,15 @@ with st.sidebar:
         <div class='sbh-rule'></div>
     </div>""", unsafe_allow_html=True)
 
-    tabla_mes_full = _tabla_clasificacion(mat_full, insc_full, metas_full, leads_full, mes_sel) if mes_sel else pd.DataFrame(columns=_COLS_CLASIFICACION)
-    supervisores = ["Todos"] + sorted(tabla_mes_full["SUPERVISOR"].unique().tolist())
+    supervisores = ["Todos"] + sorted(leads_full["Supervisor"].dropna().unique().tolist())
     sup_sel = st.selectbox("Supervisor", supervisores)
+    if len(supervisores) == 1:
+        st.caption("⚠️ Supervisor aún vacío en la hoja — sin filtrar por supervisor.")
+
+    coordinadores = ["Todos"] + sorted(leads_full["Coordinador"].dropna().unique().tolist())
+    coord_sel = st.selectbox("Coordinador", coordinadores)
+    if len(coordinadores) == 1:
+        st.caption("⚠️ Coordinador aún vacío en la hoja — sin filtrar por coordinador.")
 
     st.markdown("""
     <div class='sbf'>
@@ -471,7 +293,7 @@ st.markdown(f"""
 
     [data-testid="stAppViewContainer"], .main {{
         background:
-            radial-gradient(ellipse 90% 55% at 6% -6%,  rgba(14,165,233,0.16) 0%, transparent 55%),
+            radial-gradient(ellipse 90% 55% at 6% -6%,  rgba(244,63,94,0.14) 0%, transparent 55%),
             radial-gradient(ellipse 80% 55% at 100% 0%, rgba(99,102,241,0.17) 0%, transparent 55%),
             radial-gradient(ellipse 75% 60% at 92% 100%, rgba(52,211,153,0.08) 0%, transparent 55%),
             radial-gradient(ellipse 60% 50% at 0% 100%, rgba(99,102,241,0.07) 0%, transparent 55%),
@@ -488,7 +310,7 @@ st.markdown(f"""
         border-radius: 10px !important; transition: all .2s ease !important;
     }}
     [data-testid="stSidebarCollapseButton"] button:hover,
-    div[data-testid="collapsedControl"] button:hover {{ border-color: rgba(14,165,233,0.45) !important; }}
+    div[data-testid="collapsedControl"] button:hover {{ border-color: rgba(244,63,94,0.45) !important; }}
     [data-testid="stSidebarCollapseButton"] span {{ color: rgba(255,255,255,0.80) !important; font-size:20px !important; }}
     div[data-testid="stSidebarContent"] {{ width:100%!important; box-sizing:border-box!important; padding-right:0.75rem!important; }}
     div[data-testid="stSidebarContent"] > div {{ width:100%!important; }}
@@ -497,7 +319,7 @@ st.markdown(f"""
     .st-key-hdrbanner {{
         position: relative; overflow: hidden;
         background:
-            radial-gradient(ellipse 70% 130% at 2% -15%,  rgba(14,165,233,0.34) 0%, transparent 60%),
+            radial-gradient(ellipse 70% 130% at 2% -15%,  rgba(244,63,94,0.30) 0%, transparent 60%),
             radial-gradient(ellipse 65% 130% at 100% 120%, rgba(129,140,248,0.34) 0%, transparent 60%),
             radial-gradient(ellipse 55% 110% at 72% 130%,  rgba(52,211,153,0.16) 0%, transparent 60%),
             linear-gradient(155deg, #071811 0%, #0C2B1D 50%, #061109 100%);
@@ -536,16 +358,16 @@ st.markdown(f"""
     .st-key-hdrbanner [data-testid="stButton"] > button p {{ white-space:nowrap !important; margin:0 !important; }}
     .st-key-hdrbanner [data-testid="stButton"] > button:hover {{
         color:#EAF2FF !important; transform:translateY(-1px) !important;
-        border-color:rgba(125,211,252,0.42) !important;
-        background:linear-gradient(180deg, rgba(125,211,252,0.15), rgba(255,255,255,0.04)) !important; }}
+        border-color:rgba(251,113,133,0.42) !important;
+        background:linear-gradient(180deg, rgba(251,113,133,0.15), rgba(255,255,255,0.04)) !important; }}
     .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"] {{
-        color:#F4F9FF !important; padding-left:20px !important;
-        border:1px solid rgba(56,189,248,0.55) !important; border-top-color:rgba(186,225,255,0.62) !important;
-        background:linear-gradient(180deg, rgba(56,189,248,0.30), rgba(59,130,246,0.16)) !important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 22px -10px rgba(56,189,248,0.50) !important; }}
+        color:#FFF4F6 !important; padding-left:20px !important;
+        border:1px solid rgba(244,63,94,0.55) !important; border-top-color:rgba(255,205,215,0.62) !important;
+        background:linear-gradient(180deg, rgba(244,63,94,0.30), rgba(219,39,119,0.16)) !important;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 22px -10px rgba(244,63,94,0.50) !important; }}
     .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"]::before {{
         content:""; position:absolute; left:8px; top:50%; transform:translateY(-50%);
-        width:5px; height:5px; border-radius:50%; background:#7DD3FC; box-shadow:0 0 8px rgba(125,211,252,0.9); }}
+        width:5px; height:5px; border-radius:50%; background:#FB7185; box-shadow:0 0 8px rgba(251,113,133,0.9); }}
 
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
     @keyframes sbcBar {{ 0% {{ background-position:0% 0%; }} 100% {{ background-position:200% 0%; }} }}
@@ -595,21 +417,7 @@ st.markdown(f"""
     .sec-text {{ flex:1;min-width:0;position:relative;z-index:1; }}
     .sec-title {{ font-size:19px;font-weight:800;color:white;margin:0 0 5px 0;letter-spacing:-0.4px; }}
     .sec-desc {{ font-size:12px;color:rgba(255,255,255,0.78);margin:0;line-height:1.6; }}
-    .sec-meta {{ text-align:center;flex-shrink:0;padding:9px 20px;background:rgba(255,255,255,0.96);border-radius:13px;border:1px solid rgba(255,255,255,0.5);box-shadow:0 6px 16px -6px rgba(0,0,0,0.3);position:relative;z-index:1; }}
-    .sec-meta-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:24px;font-weight:700;line-height:1.1;margin-bottom:2px;letter-spacing:-0.5px; }}
-    .sec-meta-lab {{ font-size:9px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.08em; }}
     .sec-tag {{ font-size:10px;font-weight:700;color:white;background:rgba(255,255,255,0.20);border:1px solid rgba(255,255,255,0.35);padding:5px 14px;border-radius:99px;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;align-self:flex-start;position:relative;z-index:1; }}
-
-    /* ── Chart mini-headers ── */
-    .chart-hdr {{ display:flex;align-items:center;gap:12px;padding:12px 16px;
-        background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
-        border-radius:14px;border:1px solid rgba(255,255,255,0.10);border-left:4px solid var(--cc, {COLOR_ACCENT});
-        box-shadow:0 8px 22px -10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);margin-bottom:12px; }}
-    .ch-icon {{ font-size:18px;line-height:1;flex-shrink:0;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12); }}
-    .ch-texts {{ flex:1;min-width:0; }}
-    .ch-title {{ font-size:13px;font-weight:800;color:#F1F4FF;margin:0 0 1px;letter-spacing:-0.2px; }}
-    .ch-sub {{ font-size:10.5px;color:rgba(255,255,255,0.45);margin:0; }}
-    .ch-tag {{ margin-left:auto;font-size:9px;font-weight:700;color:var(--cc, {COLOR_ACCENT});background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);padding:3px 9px;border-radius:99px;letter-spacing:0.05em;flex-shrink:0;text-transform:uppercase; }}
 
     /* ── Table headers ── */
     .tbl-hdr {{ padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:12px;margin-bottom:6px;box-shadow:0 4px 18px rgba(0,0,0,0.15);position:relative;overflow:hidden; }}
@@ -628,7 +436,7 @@ st.markdown(f"""
         border: 1px solid rgba(255,255,255,0.09) !important; overflow: visible !important; padding: 10px !important;
     }}
 
-    /* ── Tabla Clasificación: HTML propio (mismo esquema que Avance vs. Meta) ── */
+    /* ── Tabla de usuarios ── */
     .avance-tabla-wrap {{ overflow:auto;max-height:520px;border-radius:16px;border:1px solid rgba(255,255,255,0.10);
         box-shadow:0 20px 46px -18px rgba(0,0,0,0.7);background:rgba(6,15,11,0.55);margin-bottom:22px; }}
     .avance-tabla {{ width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap; }}
@@ -638,44 +446,18 @@ st.markdown(f"""
         border-bottom:1px solid rgba(255,255,255,0.10);font-size:10.5px;letter-spacing:0.02em; }}
     .avance-tabla thead th.grp-sup {{ background:#10231B;text-align:left; }}
     .avance-tabla thead th.grp-total {{ background:#182420; }}
-    .avance-tabla thead th.grp-cumpl {{ background:linear-gradient(180deg, rgba(14,165,233,0.22), rgba(14,165,233,0.08)); }}
     .avance-tabla tbody td {{ color:rgba(225,232,250,0.92);border-bottom:1px solid rgba(255,255,255,0.045); }}
     .avance-tabla tbody tr:nth-child(odd) {{ background:rgba(10,24,18,0.45); }}
-    .avance-tabla tbody tr:hover {{ background:rgba(14,165,233,0.09); }}
+    .avance-tabla tbody tr:hover {{ background:rgba(244,63,94,0.09); }}
     .avance-tabla td.sup-cell {{ font-weight:700;color:white;text-align:left; }}
-    .avance-tabla tr.total-row td {{ font-weight:800!important;background:rgba(52,211,153,0.16)!important; }}
-    .cumpl-cell {{ min-width:150px; }}
-    .cumpl-wrap {{ display:flex;align-items:center;gap:7px;justify-content:center; }}
-    .cumpl-bar-track {{ flex:1;max-width:80px;height:6px;border-radius:99px;
-        background:rgba(255,255,255,0.10);overflow:hidden; }}
-    .cumpl-bar-fill {{ height:100%;border-radius:99px;box-shadow:0 0 8px -1px currentColor; }}
-    .cumpl-pct {{ font-weight:800;font-size:11px;min-width:34px;text-align:right; }}
     .avance-tabla-wrap::-webkit-scrollbar {{ width:6px;height:6px; }}
     .avance-tabla-wrap::-webkit-scrollbar-track {{ background:rgba(255,255,255,0.04); }}
-    .avance-tabla-wrap::-webkit-scrollbar-thumb {{ background:rgba(56,189,248,0.35);border-radius:99px; }}
-    .cuartil-badge {{ display:inline-block;padding:3px 13px;border-radius:99px;font-weight:800;font-size:11px;border:1px solid;letter-spacing:0.03em; }}
-
-    /* ── Listas "Top" (rankings) ── */
-    .top-list {{ display:flex;flex-direction:column;gap:8px; }}
-    .top-row {{ display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:12px;
-        background:linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));
-        border:1px solid rgba(255,255,255,0.09);
-        transition:transform .2s ease,border-color .2s ease; }}
-    .top-row:hover {{ transform:translateX(4px);border-color:var(--ac); }}
-    .top-rank {{ font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:12px;
-        color:rgba(255,255,255,0.32);width:20px;flex-shrink:0; }}
-    .top-avatar {{ width:34px;height:34px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-        font-size:11.5px;font-weight:800;color:white;background:var(--ac);
-        box-shadow:0 4px 12px -3px var(--ac); }}
-    .top-body {{ flex:1;min-width:0; }}
-    .top-name {{ font-size:12.5px;font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-meta {{ font-size:10.5px;color:rgba(255,255,255,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-value {{ flex-shrink:0;font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:14px; }}
+    .avance-tabla-wrap::-webkit-scrollbar-thumb {{ background:rgba(244,63,94,0.35);border-radius:99px; }}
 
     /* ── Sidebar base ── */
     section[data-testid="stSidebar"] > div:first-child {{
         background:
-            radial-gradient(ellipse 95% 42% at 8% 0%,    rgba(14,165,233,0.30) 0%, transparent 55%),
+            radial-gradient(ellipse 95% 42% at 8% 0%,    rgba(244,63,94,0.24) 0%, transparent 55%),
             radial-gradient(ellipse 90% 42% at 100% 26%, rgba(129,140,248,0.28) 0%, transparent 55%),
             radial-gradient(ellipse 85% 42% at 50% 102%, rgba(52,211,153,0.15) 0%, transparent 55%),
             linear-gradient(160deg, #071811 0%, #0C2B1D 45%, #061109 100%);
@@ -691,17 +473,17 @@ st.markdown(f"""
 
     /* ── Brand card ── */
     .sbc {{ position:relative;border-radius:20px;overflow:hidden;margin:0 0 20px;padding:20px 18px 18px;
-        background:linear-gradient(145deg,rgba(56,189,248,0.12) 0%,rgba(129,140,248,0.09) 55%,rgba(52,211,153,0.07) 100%),rgba(255,255,255,0.04);
+        background:linear-gradient(145deg,rgba(244,63,94,0.12) 0%,rgba(129,140,248,0.09) 55%,rgba(52,211,153,0.07) 100%),rgba(255,255,255,0.04);
         border:1px solid rgba(255,255,255,0.12); }}
     .sbc-orb {{ position:absolute;border-radius:50%;pointer-events:none; }}
-    .sbc-orb-1 {{ width:140px;height:140px;background:radial-gradient(circle,rgba(56,189,248,0.18) 0%,transparent 70%);top:-50px;right:-40px; }}
+    .sbc-orb-1 {{ width:140px;height:140px;background:radial-gradient(circle,rgba(244,63,94,0.18) 0%,transparent 70%);top:-50px;right:-40px; }}
     .sbc-orb-2 {{ width:90px;height:90px;background:radial-gradient(circle,rgba(129,140,248,0.16) 0%,transparent 70%);bottom:-30px;left:-25px; }}
     .sbc-orb-3 {{ width:60px;height:60px;background:radial-gradient(circle,rgba(52,211,153,0.14) 0%,transparent 70%);top:50%;right:12px; }}
     .sbc-live {{ position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:5px;font-size:8px!important;font-weight:800!important;color:#34D399!important;background:rgba(52,211,153,0.13);border:1px solid rgba(52,211,153,0.30);padding:3px 9px 3px 7px;border-radius:99px;letter-spacing:0.10em;z-index:2; }}
     .sbc-pulse {{ width:5px;height:5px;background:#34D399;border-radius:50%;display:inline-block;animation:sbcPulse 1.8s ease-in-out infinite; }}
     .sbc-body {{ position:relative;z-index:1;text-align:center; }}
     .sbc-logo-wrap {{ margin-bottom:10px;display:flex;justify-content:center;align-items:center; }}
-    .sbc-logo-img {{ max-width:150px!important;height:auto!important;filter:drop-shadow(0 4px 14px rgba(56,189,248,0.45)) brightness(1.05);display:block; }}
+    .sbc-logo-img {{ max-width:150px!important;height:auto!important;filter:drop-shadow(0 4px 14px rgba(244,63,94,0.45)) brightness(1.05);display:block; }}
     .sbc-name {{ font-size:13px!important;font-weight:700!important;color:rgba(255,255,255,0.88)!important;letter-spacing:0!important;margin-bottom:4px!important; }}
     .sbc-org {{ font-size:10px!important;color:rgba(255,255,255,0.35)!important;margin-bottom:16px!important; }}
     .sbc-stats {{ display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.22);border-radius:12px;padding:10px 8px;border:1px solid rgba(255,255,255,0.07); }}
@@ -709,7 +491,7 @@ st.markdown(f"""
     .sbc-sv {{ display:block;font-size:14px!important;font-weight:900!important;color:white!important;line-height:1;margin-bottom:3px; }}
     .sbc-sl {{ display:block;font-size:8px!important;font-weight:700!important;color:rgba(255,255,255,0.28)!important;letter-spacing:0.10em;text-transform:uppercase; }}
     .sbc-sep {{ width:1px;height:28px;background:rgba(255,255,255,0.09);flex-shrink:0; }}
-    .sbc-bar {{ position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#38BDF8,#818CF8,#34D399,#F59E0B,#38BDF8);background-size:300% 100%;animation:sbcBar 4s linear infinite; }}
+    .sbc-bar {{ position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#F43F5E,#818CF8,#34D399,#F59E0B,#F43F5E);background-size:300% 100%;animation:sbcBar 4s linear infinite; }}
 
     /* ── Section headers (sidebar) ── */
     .sbh {{ display:flex;align-items:center;gap:10px;margin:24px 0 12px; }}
@@ -731,14 +513,14 @@ st.markdown(f"""
     div[data-testid="stSidebarContent"] [data-testid="stWidgetLabel"] span {{ font-size:11px!important;font-weight:500!important;color:rgba(255,255,255,0.50)!important; }}
     div[data-testid="stSidebarContent"] .stSelectbox > div > div,
     div[data-testid="stSidebarContent"] .stSelectbox > label + div > div {{ background:rgba(255,255,255,0.05)!important;border:1px solid rgba(255,255,255,0.12)!important;border-radius:9px!important;transition:border-color .18s, box-shadow .18s!important; }}
-    div[data-testid="stSidebarContent"] .stSelectbox > div > div:hover {{ border-color:rgba(56,189,248,0.50)!important;box-shadow:0 0 0 3px rgba(56,189,248,0.10)!important; }}
+    div[data-testid="stSidebarContent"] .stSelectbox > div > div:hover {{ border-color:rgba(244,63,94,0.50)!important;box-shadow:0 0 0 3px rgba(244,63,94,0.10)!important; }}
 
     /* ── Footer ── */
     .sbf {{ margin-top:26px;padding:0; }}
-    .sbf-card {{ position:relative;overflow:hidden;border-radius:16px;padding:14px 14px;background:linear-gradient(150deg,rgba(56,189,248,0.10),rgba(129,140,248,0.06));border:1px solid rgba(255,255,255,0.10);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08); }}
-    .sbf-glow {{ position:absolute;width:120px;height:120px;border-radius:50%;top:-50px;right:-40px;background:radial-gradient(circle,rgba(56,189,248,0.20),transparent 70%);pointer-events:none; }}
+    .sbf-card {{ position:relative;overflow:hidden;border-radius:16px;padding:14px 14px;background:linear-gradient(150deg,rgba(244,63,94,0.10),rgba(129,140,248,0.06));border:1px solid rgba(255,255,255,0.10);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08); }}
+    .sbf-glow {{ position:absolute;width:120px;height:120px;border-radius:50%;top:-50px;right:-40px;background:radial-gradient(circle,rgba(244,63,94,0.20),transparent 70%);pointer-events:none; }}
     .sbf-row {{ display:flex;align-items:center;gap:12px;position:relative;z-index:1; }}
-    .sbf-avatar {{ position:relative;width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#38BDF8 0%,#818CF8 100%);display:flex;align-items:center;justify-content:center;font-size:14px!important;font-weight:900!important;color:white!important;flex-shrink:0;letter-spacing:0.5px;box-shadow:0 6px 18px rgba(56,189,248,0.45),inset 0 1px 0 rgba(255,255,255,0.3); }}
+    .sbf-avatar {{ position:relative;width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#F43F5E 0%,#818CF8 100%);display:flex;align-items:center;justify-content:center;font-size:14px!important;font-weight:900!important;color:white!important;flex-shrink:0;letter-spacing:0.5px;box-shadow:0 6px 18px rgba(244,63,94,0.45),inset 0 1px 0 rgba(255,255,255,0.3); }}
     .sbf-online {{ position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#34D399;border:2.5px solid #130A2B;box-shadow:0 0 8px rgba(52,211,153,0.8);animation:sbcPulse 2s ease-in-out infinite; }}
     .sbf-name {{ font-size:12px!important;font-weight:700!important;color:rgba(255,255,255,0.92)!important;margin-bottom:3px!important; }}
     .sbf-role {{ font-size:10px!important;color:rgba(255,255,255,0.42)!important;line-height:1.3; }}
@@ -753,16 +535,18 @@ st.markdown(f"""
 _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
+_cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
 _cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-_leads_pg = st.Page("pages/5_Leads.py", title="Leads", icon="🎯")
 
+rango = f"{fecha_ini.strftime('%d/%m/%Y')} – {fecha_fin.strftime('%d/%m/%Y')}"
 with st.container(key="hdrbanner"):
     st.markdown(f"""
     <div class='hb-eyebrow'><span class='hb-dot'></span>Centro de Control · Uniminuto 2026</div>
-    <div class='hb-title'>Módulo de Cuartiles</div>
+    <div class='hb-title'>Módulo de Leads</div>
     <div class='hb-meta'>
-        <span class='hb-chip'>📅 Mes <b>{mes_sel or "—"}</b></span>
-        <span class='hb-chip'>🧭 Basado en volumen de Matrículas</span>
+        <span class='hb-chip'>📅 <b>{rango}</b></span>
+        <span class='hb-chip'>🧭 Supervisor <b>{sup_sel}</b></span>
+        <span class='hb-chip'>🧭 Coordinador <b>{coord_sel}</b></span>
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
@@ -777,19 +561,27 @@ with st.container(key="hdrbanner"):
         if st.button("🎓 Matrículas", key="hdr_mat", width="stretch"):
             st.switch_page(_mat_pg)
     with nb4:
-        st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch", type="primary")
+        if st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch"):
+            st.switch_page(_cuart_pg)
     with nb5:
         if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
     with nb6:
-        if st.button("🎯 Leads", key="hdr_leads", width="stretch"):
-            st.switch_page(_leads_pg)
+        st.button("🎯 Leads", key="hdr_leads", width="stretch", type="primary")
 
-if not mes_sel:
+if not len(leads_full):
+    st.warning("Sin datos en la hoja 'Resumen diario'.")
     st.stop()
 
-tabla_mes = tabla_mes_full
-tabla_vista = tabla_mes if sup_sel == "Todos" else tabla_mes[tabla_mes["SUPERVISOR"] == sup_sel]
+# ─────────────────────────────────────────────
+# FILTRO DEL RANGO SELECCIONADO
+# ─────────────────────────────────────────────
+mask = (leads_full["_FECHA"].dt.date >= fecha_ini) & (leads_full["_FECHA"].dt.date <= fecha_fin)
+if sup_sel != "Todos":
+    mask &= leads_full["Supervisor"] == sup_sel
+if coord_sel != "Todos":
+    mask &= leads_full["Coordinador"] == coord_sel
+d = leads_full[mask].copy()
 
 # ─────────────────────────────────────────────
 # KPIs
@@ -799,185 +591,174 @@ def kpi_bar(pct, color, max_val=100):
     return f"<div class='kpi-bar-wrap'><div class='kpi-bar-fill' style='width:{fill:.0f}%;background:{color};'></div></div>"
 
 
-total_asesores = len(tabla_mes)
-n_q1 = int((tabla_mes["CUARTIL"] == "Q1").sum())
-n_q4 = int((tabla_mes["CUARTIL"] == "Q4").sum())
-cumpl_prom_mat = tabla_mes["CUMPL_MAT"].mean() if total_asesores else 0.0
-color_cumpl = COLOR_SUCCESS if cumpl_prom_mat >= 100 else (COLOR_WARNING if cumpl_prom_mat >= 70 else COLOR_DANGER)
+total_insumo = int(d["_INSUMO"].sum())
+dias_con_datos = d["_FECHA"].nunique()
+promedio_dia = total_insumo / dias_con_datos if dias_con_datos else 0
+asesores_activos = d["_USUARIO"].nunique()
+
+tabla_usuarios = _tabla_usuarios(d)
+if len(tabla_usuarios):
+    top_asesor = tabla_usuarios.iloc[0]
+    top_asesor_txt = f"{top_asesor['NOMBRE']}"
+    top_asesor_val = int(top_asesor["INSUMO"])
+else:
+    top_asesor_txt, top_asesor_val = "—", 0
 
 k1, k2, k3, k4 = st.columns(4)
 with k1:
     st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_ACCENT}'>
-        <div class='kpi-bg-icon'>👥</div>
+        <div class='kpi-bg-icon'>🎯</div>
         <div>
-            <div class='kpi-label'>Total asesores</div>
-            <div class='kpi-value' style='color:#7DD3FC'>{total_asesores}</div>
-            <div class='kpi-sub'>cuartilizados en {mes_sel}</div>
+            <div class='kpi-label'>Insumo total</div>
+            <div class='kpi-value' style='color:#FB7185'>{total_insumo:,}</div>
+            <div class='kpi-sub'>leads asignados en el período</div>
         </div>
-        {kpi_bar(total_asesores, COLOR_ACCENT, max(total_asesores, 1))}
     </div>""", unsafe_allow_html=True)
 with k2:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_DANGER}'>
-        <div class='kpi-bg-icon'>⚠️</div>
+    st.markdown(f"""<div class='kpi-card' style='--kc:#38BDF8'>
+        <div class='kpi-bg-icon'>📊</div>
         <div>
-            <div class='kpi-label'>Asesores en Q1</div>
-            <div class='kpi-value' style='color:{COLOR_DANGER}'>{n_q1}</div>
-            <div class='kpi-sub'>25% de menor volumen de matrículas</div>
+            <div class='kpi-label'>Promedio diario</div>
+            <div class='kpi-value' style='color:#38BDF8'>{promedio_dia:.0f}</div>
+            <div class='kpi-sub'>leads por día, todos los asesores</div>
         </div>
-        {kpi_bar(n_q1, COLOR_DANGER, max(total_asesores, 1))}
     </div>""", unsafe_allow_html=True)
 with k3:
     st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_SUCCESS}'>
-        <div class='kpi-bg-icon'>🏆</div>
+        <div class='kpi-bg-icon'>👥</div>
         <div>
-            <div class='kpi-label'>Asesores en Q4</div>
-            <div class='kpi-value' style='color:{COLOR_SUCCESS}'>{n_q4}</div>
-            <div class='kpi-sub'>25% de mayor volumen de matrículas</div>
+            <div class='kpi-label'>Asesores activos</div>
+            <div class='kpi-value' style='color:{COLOR_SUCCESS}'>{asesores_activos}</div>
+            <div class='kpi-sub'>con leads asignados en el rango</div>
         </div>
-        {kpi_bar(n_q4, COLOR_SUCCESS, max(total_asesores, 1))}
     </div>""", unsafe_allow_html=True)
 with k4:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{color_cumpl}'>
-        <div class='kpi-bg-icon'>🎯</div>
+    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_WARNING}'>
+        <div class='kpi-bg-icon'>🏅</div>
         <div>
-            <div class='kpi-label'>Cumplimiento promedio</div>
-            <div class='kpi-value' style='color:{color_cumpl}'>{cumpl_prom_mat:.0f}%</div>
-            <div class='kpi-sub'>meta de matrículas, todos los asesores</div>
+            <div class='kpi-label'>Asesor top</div>
+            <div class='kpi-value' style='color:{COLOR_WARNING};font-size:18px'>{top_asesor_txt}</div>
+            <div class='kpi-sub'>{top_asesor_val:,} leads en el período</div>
         </div>
-        {kpi_bar(cumpl_prom_mat, color_cumpl)}
     </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# CLASIFICACIÓN DE ASESORES
+# TABLA — USUARIO / SUPERVISOR / COORDINADOR
 # ─────────────────────────────────────────────
 st.markdown(f"""
 <div class='sec-header' style='--sc:{COLOR_PRIMARY}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(52,211,153,0.20),rgba(52,211,153,0.06))'>🏆</div>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(244,63,94,0.20),rgba(244,63,94,0.06))'>🎯</div>
     <div class='sec-text'>
-        <div class='sec-title'>Clasificación de Asesores</div>
-        <div class='sec-desc'>Meta y real de inscripciones y matrículas por asesor, con su cuartil de desempeño del mes.</div>
+        <div class='sec-title'>Insumo por Asesor</div>
+        <div class='sec-desc'>Leads asignados por asesor en el período, con su supervisor y coordinador.</div>
     </div>
-    <span class='sec-tag' style='background:{COLOR_PRIMARY}'>Q1 = menor volumen · Q4 = mayor volumen</span>
+    <span class='sec-tag' style='background:{COLOR_PRIMARY}'>Ordenado por insumo</span>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
+st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#F43F5E)'>
     <span class='tbl-hdr-icon'>📋</span>
     <div class='tbl-hdr-body'>
-        <div class='tbl-hdr-title'>Asesores — {mes_sel}</div>
-        <div class='tbl-hdr-desc'>Ordenado por matrículas reales, de mayor a menor</div>
+        <div class='tbl-hdr-title'>Asesores — {rango}</div>
+        <div class='tbl-hdr-desc'>Supervisor y coordinador según el último dato disponible en la hoja</div>
     </div>
-    <span class='tbl-hdr-badge'>{len(tabla_vista)} asesores</span>
+    <span class='tbl-hdr-badge'>{len(tabla_usuarios)} asesores</span>
 </div>""", unsafe_allow_html=True)
-_render_tabla_clasificacion(tabla_vista)
+_render_tabla_usuarios(tabla_usuarios)
 
-_export = tabla_vista.rename(columns={
-    "ASESOR": "ASESOR", "SUPERVISOR": "SUPERVISOR",
-    "META_INSC": "META INSCRIPCIONES", "META_MAT": "META MATRICULAS",
-    "REAL_INSC": "INSCRIPCIONES", "REAL_MAT": "MATRICULAS", "INSUMO": "INSUMO (LEADS)",
-    "CUMPL_INSC": "CUMPLIMIENTO INSCRIPCIONES %", "CUMPL_MAT": "CUMPLIMIENTO MATRICULAS %",
-    "CUARTIL": "CUARTIL",
+_export = tabla_usuarios.rename(columns={
+    "USUARIO": "USUARIO", "NOMBRE": "NOMBRE", "SUPERVISOR": "SUPERVISOR", "COORDINADOR": "COORDINADOR",
+    "INSUMO": "INSUMO (LEADS)", "DIAS": "DIAS CON DATOS", "PROMEDIO_DIA": "PROMEDIO POR DIA",
 })
 b64 = base64.b64encode(_excel_bytes(_export)).decode()
 st.markdown(
     f'<div style="text-align:right;margin-top:-14px;margin-bottom:8px">'
     f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" '
-    f'download="cuartiles_{mes_sel.lower()}.xlsx" '
+    f'download="leads_asesores.xlsx" '
     f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
     f'↓ Exportar Excel</a></div>',
     unsafe_allow_html=True,
 )
 
 # ─────────────────────────────────────────────
-# TOP 10 Y ÚLTIMOS 10 DEL MES
+# INSUMO POR EXPERTO
 # ─────────────────────────────────────────────
 st.markdown("""
-<div class='sec-header' style='--sc:#F59E0B'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(245,158,11,0.20),rgba(245,158,11,0.06))'>🏅</div>
+<div class='sec-header' style='--sc:#F43F5E'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(244,63,94,0.20),rgba(244,63,94,0.06))'>👤</div>
     <div class='sec-text'>
-        <div class='sec-title'>Top 10 y Últimos 10</div>
-        <div class='sec-desc'>Extremos de desempeño del mes por volumen de matrículas.</div>
+        <div class='sec-title'>Insumo por Experto</div>
+        <div class='sec-desc'>Top 20 asesores por leads asignados en el período seleccionado.</div>
     </div>
-    <span class='sec-tag' style='background:#F59E0B'>Ranking</span>
+    <span class='sec-tag' style='background:#F43F5E'>Top 20</span>
 </div>
 """, unsafe_allow_html=True)
-
-_top10 = tabla_mes.sort_values("REAL_MAT", ascending=False).head(10)
-_ultimos10 = tabla_mes.sort_values("REAL_MAT", ascending=True).head(10)
-
-tcol1, tcol2 = st.columns(2)
-with tcol1:
-    st.markdown("""<div class='chart-hdr' style='--cc:#34D399'>
-        <span class='ch-icon'>🥇</span>
-        <div class='ch-texts'><div class='ch-title'>Top 10 asesores</div><div class='ch-sub'>Más matrículas del mes</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [(row["ASESOR"], row["SUPERVISOR"], f"{int(row['REAL_MAT'])}") for _, row in _top10.iterrows()]
-    st.markdown(_top_lista_html(_filas, COLOR_SUCCESS), unsafe_allow_html=True)
-with tcol2:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_DANGER}'>
-        <span class='ch-icon'>⚠️</span>
-        <div class='ch-texts'><div class='ch-title'>Últimos 10 asesores</div><div class='ch-sub'>Menos matrículas del mes</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [(row["ASESOR"], row["SUPERVISOR"], f"{int(row['REAL_MAT'])}") for _, row in _ultimos10.iterrows()]
-    st.markdown(_top_lista_html(_filas, COLOR_DANGER), unsafe_allow_html=True)
+if len(tabla_usuarios):
+    st.plotly_chart(
+        _fig_barra_horizontal(tabla_usuarios["NOMBRE"], tabla_usuarios["INSUMO"], "#F43F5E", top_n=20),
+        width="stretch", config={"displayModeBar": False},
+    )
+else:
+    st.caption("Sin datos para el período seleccionado.")
 
 # ─────────────────────────────────────────────
-# COMPARATIVO ENTRE SUPERVISORES
+# INSUMO POR SUPERVISOR
 # ─────────────────────────────────────────────
 st.markdown("""
 <div class='sec-header' style='--sc:#38BDF8'>
     <div class='sec-icon' style='background:linear-gradient(135deg,rgba(56,189,248,0.20),rgba(56,189,248,0.06))'>🧭</div>
     <div class='sec-text'>
-        <div class='sec-title'>Comparativo entre Supervisores</div>
-        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil.</div>
+        <div class='sec-title'>Insumo por Supervisor</div>
+        <div class='sec-desc'>Suma de leads asignados a los asesores de cada supervisor.</div>
     </div>
-    <span class='sec-tag' style='background:#38BDF8'>Distribución</span>
+    <span class='sec-tag' style='background:#38BDF8'>Por supervisor</span>
 </div>
 """, unsafe_allow_html=True)
-st.plotly_chart(_fig_cuartil_supervisor(tabla_mes), width="stretch", config={"displayModeBar": False})
+grp_sup = d.dropna(subset=["Supervisor"]).groupby("Supervisor")["_INSUMO"].sum()
+if len(grp_sup):
+    st.plotly_chart(
+        _fig_barra_horizontal(grp_sup.index, grp_sup.values, "#38BDF8"),
+        width="stretch", config={"displayModeBar": False},
+    )
+else:
+    st.caption("⚠️ Aún no hay valores de Supervisor en la hoja 'Resumen diario' para el período seleccionado.")
 
 # ─────────────────────────────────────────────
-# INSUMO VS. CONVERSIÓN
+# INSUMO POR COORDINADOR
+# ─────────────────────────────────────────────
+st.markdown("""
+<div class='sec-header' style='--sc:#818CF8'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(129,140,248,0.20),rgba(129,140,248,0.06))'>🧑‍💼</div>
+    <div class='sec-text'>
+        <div class='sec-title'>Insumo por Coordinador</div>
+        <div class='sec-desc'>Suma de leads asignados a los asesores de cada coordinador.</div>
+    </div>
+    <span class='sec-tag' style='background:#818CF8'>Por coordinador</span>
+</div>
+""", unsafe_allow_html=True)
+grp_coord = d.dropna(subset=["Coordinador"]).groupby("Coordinador")["_INSUMO"].sum()
+if len(grp_coord):
+    st.plotly_chart(
+        _fig_barra_horizontal(grp_coord.index, grp_coord.values, "#818CF8"),
+        width="stretch", config={"displayModeBar": False},
+    )
+else:
+    st.caption("⚠️ Aún no hay valores de Coordinador en la hoja 'Resumen diario' para el período seleccionado.")
+
+# ─────────────────────────────────────────────
+# TENDENCIA DIARIA
 # ─────────────────────────────────────────────
 st.markdown(f"""
-<div class='sec-header' style='--sc:#F43F5E'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(244,63,94,0.20),rgba(244,63,94,0.06))'>🎯</div>
+<div class='sec-header' style='--sc:{COLOR_SUCCESS}'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(16,185,129,0.20),rgba(16,185,129,0.06))'>📈</div>
     <div class='sec-text'>
-        <div class='sec-title'>Insumo vs. Conversión</div>
-        <div class='sec-desc'>Qué porcentaje de los leads asignados a cada asesor terminó en matrícula — mide eficiencia, no solo volumen.</div>
+        <div class='sec-title'>Tendencia Diaria</div>
+        <div class='sec-desc'>Total de leads asignados por día, todos los asesores.</div>
     </div>
-    <span class='sec-tag' style='background:#F43F5E'>Matrículas ÷ Insumo</span>
+    <span class='sec-tag' style='background:{COLOR_SUCCESS}'>Serie diaria</span>
 </div>
 """, unsafe_allow_html=True)
-
-_MIN_INSUMO_CONVERSION = 30
-_con_insumo = tabla_mes[tabla_mes["INSUMO"] >= _MIN_INSUMO_CONVERSION]
-if len(_con_insumo):
-    st.plotly_chart(_fig_conversion(tabla_mes, min_insumo=_MIN_INSUMO_CONVERSION), width="stretch", config={"displayModeBar": False})
-    st.caption(f"Sólo asesores con al menos {_MIN_INSUMO_CONVERSION} leads recibidos en el mes (para que el % no sea ruido de muestras muy chicas). Top 15 por conversión.")
+if len(d):
+    st.plotly_chart(_fig_tendencia(d), width="stretch", config={"displayModeBar": False})
 else:
-    st.caption("Sin insumo (leads) suficiente este mes para calcular conversión — revisa que la hoja de Leads tenga la Cedula de estos asesores.")
-
-# ─────────────────────────────────────────────
-# EVOLUCIÓN HISTÓRICA
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_ACCENT}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Evolución Histórica</div>
-        <div class='sec-desc'>Cuartil de cada asesor mes a mes — permite ver si sube, baja o se mantiene.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_ACCENT}'>Heatmap</span>
-</div>
-""", unsafe_allow_html=True)
-
-_historico = _historico_cuartiles(mat_full, insc_full, metas_full, leads_full, meses_disponibles)
-if len(_historico):
-    _n_asesores_hist = _historico["ASESOR"].nunique()
-    _top_n_hist = 30
-    st.plotly_chart(_fig_evolucion(_historico, meses_disponibles, top_n=_top_n_hist), width="stretch", config={"displayModeBar": False})
-    if _n_asesores_hist > _top_n_hist:
-        st.caption(f"Mostrando los {_top_n_hist} asesores con más meses de historial, de {_n_asesores_hist} en total.")
-else:
-    st.caption("Sin histórico suficiente para graficar la evolución.")
+    st.caption("Sin datos para el período seleccionado.")

@@ -8,7 +8,8 @@ COLOR_ACCENT  = "#0EA5E9"
 insc_pg  = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 mat_pg   = st.Page("pages/2_Matriculas.py",    title="Matrículas",    icon="🎓")
 cuart_pg = st.Page("pages/3_Cuartiles.py",     title="Cuartiles",     icon="🏆")
-cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Contactabilidad", icon="📞")
+cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
+leads_pg = st.Page("pages/5_Leads.py",          title="Leads",     icon="🎯")
 
 _MODULOS = {
     "insc": dict(
@@ -37,12 +38,20 @@ _MODULOS = {
         acbord="rgba(52,211,153,0.45)", page=cuart_pg, cta="Ver avance →",
     ),
     "cont": dict(
-        icon="📞", title="Contactabilidad", status="wip", status_label="En desarrollo", progress=10,
+        icon="📞", title="Real time", status="wip", status_label="En desarrollo", progress=10,
         desc="Efectividad de contacto por asesor: intentos por lead, tasa de contacto efectivo y las franjas horarias con mejor respuesta.",
         feats=["Tasa de contacto", "Intentos por lead", "Franja horaria óptima"],
         ac1="#F97316", ac2="#F59E0B",
         icobg="linear-gradient(135deg,rgba(249,115,22,0.22),rgba(245,158,11,0.10))",
         acbord="rgba(249,115,22,0.45)", page=cont_pg, cta="Ver avance →",
+    ),
+    "leads": dict(
+        icon="🎯", title="Leads", status="wip", status_label="En desarrollo", progress=5,
+        desc="Seguimiento del origen y calidad de los leads antes de convertirse en inscripción: fuente, campaña y estado de calificación.",
+        feats=["Origen y campaña", "Calificación de leads", "Conversión a inscripción"],
+        ac1="#F43F5E", ac2="#FB7185",
+        icobg="linear-gradient(135deg,rgba(244,63,94,0.22),rgba(251,113,133,0.10))",
+        acbord="rgba(244,63,94,0.45)", page=leads_pg, cta="Ver avance →",
     ),
 }
 
@@ -363,38 +372,39 @@ st.markdown(f"""
     .rail-active-flag {{ display:none; }}
     .rail-div {{ height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.12),transparent);margin-bottom:2px; }}
 
-    .st-key-railitem_insc, .st-key-railitem_mat, .st-key-railitem_cuart, .st-key-railitem_cont {{
+    .st-key-railitem_insc, .st-key-railitem_mat, .st-key-railitem_cuart, .st-key-railitem_cont, .st-key-railitem_leads {{
         position:relative;border-radius:18px;padding:14px 16px 8px;margin-bottom:12px;overflow:hidden;
         background:linear-gradient(160deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.015) 100%);
         border:1px solid rgba(255,255,255,0.09);
         transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;
     }}
-    .st-key-railitem_insc:hover, .st-key-railitem_mat:hover, .st-key-railitem_cuart:hover, .st-key-railitem_cont:hover {{
+    .st-key-railitem_insc:hover, .st-key-railitem_mat:hover, .st-key-railitem_cuart:hover, .st-key-railitem_cont:hover, .st-key-railitem_leads:hover {{
         transform:translateY(-3px);border-color:var(--acbord); }}
     .st-key-railitem_insc:hover .rail-ico, .st-key-railitem_mat:hover .rail-ico,
-    .st-key-railitem_cuart:hover .rail-ico, .st-key-railitem_cont:hover .rail-ico {{
+    .st-key-railitem_cuart:hover .rail-ico, .st-key-railitem_cont:hover .rail-ico, .st-key-railitem_leads:hover .rail-ico {{
         transform:scale(1.08) rotate(-4deg); }}
     .st-key-railitem_insc:has(.rail-active-flag), .st-key-railitem_mat:has(.rail-active-flag),
-    .st-key-railitem_cuart:has(.rail-active-flag), .st-key-railitem_cont:has(.rail-active-flag) {{
+    .st-key-railitem_cuart:has(.rail-active-flag), .st-key-railitem_cont:has(.rail-active-flag), .st-key-railitem_leads:has(.rail-active-flag) {{
         border-color:var(--acbord);
         background:linear-gradient(160deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.025) 100%);
         box-shadow:0 16px 36px -14px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.10); }}
     .st-key-railitem_insc::before, .st-key-railitem_mat::before,
-    .st-key-railitem_cuart::before, .st-key-railitem_cont::before {{
+    .st-key-railitem_cuart::before, .st-key-railitem_cont::before, .st-key-railitem_leads::before {{
         content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;
         background:var(--ac1);opacity:0;transition:opacity .25s ease; }}
     .st-key-railitem_insc:has(.rail-active-flag)::before, .st-key-railitem_mat:has(.rail-active-flag)::before,
-    .st-key-railitem_cuart:has(.rail-active-flag)::before, .st-key-railitem_cont:has(.rail-active-flag)::before {{ opacity:1; }}
+    .st-key-railitem_cuart:has(.rail-active-flag)::before, .st-key-railitem_cont:has(.rail-active-flag)::before, .st-key-railitem_leads:has(.rail-active-flag)::before {{ opacity:1; }}
     .st-key-railitem_insc  {{ --ac1:#0EA5E9;--ac2:#6366F1; --icobg:linear-gradient(135deg,rgba(14,165,233,0.24),rgba(99,102,241,0.10)); --acbord:rgba(56,189,248,0.5); }}
     .st-key-railitem_mat   {{ --ac1:#8B5CF6;--ac2:#EC4899; --icobg:linear-gradient(135deg,rgba(139,92,246,0.24),rgba(236,72,153,0.10)); --acbord:rgba(167,139,250,0.5); }}
     .st-key-railitem_cuart {{ --ac1:#34D399;--ac2:#059669; --icobg:linear-gradient(135deg,rgba(52,211,153,0.24),rgba(5,150,105,0.10)); --acbord:rgba(52,211,153,0.5); }}
     .st-key-railitem_cont  {{ --ac1:#F97316;--ac2:#F59E0B; --icobg:linear-gradient(135deg,rgba(249,115,22,0.24),rgba(245,158,11,0.10)); --acbord:rgba(249,115,22,0.5); }}
+    .st-key-railitem_leads {{ --ac1:#F43F5E;--ac2:#FB7185; --icobg:linear-gradient(135deg,rgba(244,63,94,0.24),rgba(251,113,133,0.10)); --acbord:rgba(244,63,94,0.5); }}
 
     .st-key-railitem_insc div[data-testid="stButton"], .st-key-railitem_mat div[data-testid="stButton"],
-    .st-key-railitem_cuart div[data-testid="stButton"], .st-key-railitem_cont div[data-testid="stButton"] {{
+    .st-key-railitem_cuart div[data-testid="stButton"], .st-key-railitem_cont div[data-testid="stButton"], .st-key-railitem_leads div[data-testid="stButton"] {{
         margin-top:8px; }}
     .st-key-railitem_insc div[data-testid="stButton"] > button, .st-key-railitem_mat div[data-testid="stButton"] > button,
-    .st-key-railitem_cuart div[data-testid="stButton"] > button, .st-key-railitem_cont div[data-testid="stButton"] > button {{
+    .st-key-railitem_cuart div[data-testid="stButton"] > button, .st-key-railitem_cont div[data-testid="stButton"] > button, .st-key-railitem_leads div[data-testid="stButton"] > button {{
         height:32px!important;min-height:32px!important;padding:0 4px!important;
         background:transparent!important;border:none!important;box-shadow:none!important;
         color:rgba(255,255,255,0.38)!important;font-size:10.5px!important;font-weight:700!important;
@@ -403,8 +413,9 @@ st.markdown(f"""
     .st-key-railitem_mat div[data-testid="stButton"] > button:hover {{ color:#8B5CF6!important;transform:none!important;box-shadow:none!important; }}
     .st-key-railitem_cuart div[data-testid="stButton"] > button:hover {{ color:#34D399!important;transform:none!important;box-shadow:none!important; }}
     .st-key-railitem_cont div[data-testid="stButton"] > button:hover {{ color:#F97316!important;transform:none!important;box-shadow:none!important; }}
+    .st-key-railitem_leads div[data-testid="stButton"] > button:hover {{ color:#F43F5E!important;transform:none!important;box-shadow:none!important; }}
     .st-key-railitem_insc div[data-testid="stButton"] > button p, .st-key-railitem_mat div[data-testid="stButton"] > button p,
-    .st-key-railitem_cuart div[data-testid="stButton"] > button p, .st-key-railitem_cont div[data-testid="stButton"] > button p {{
+    .st-key-railitem_cuart div[data-testid="stButton"] > button p, .st-key-railitem_cont div[data-testid="stButton"] > button p, .st-key-railitem_leads div[data-testid="stButton"] > button p {{
         text-align:center!important; }}
 
     /* -- panel de detalle -- */
@@ -601,8 +612,9 @@ st.markdown("""
             Plataforma de análisis del proceso comercial y académico.
             Monitorea <b style='color:rgba(255,255,255,0.85)'>inscripciones</b>,
             <b style='color:rgba(255,255,255,0.85)'>matrículas</b>,
-            <b style='color:rgba(255,255,255,0.85)'>cuartiles</b> y
-            <b style='color:rgba(255,255,255,0.85)'>contactabilidad</b> en tiempo real, desde una sola base consolidada.
+            <b style='color:rgba(255,255,255,0.85)'>cuartiles</b>,
+            <b style='color:rgba(255,255,255,0.85)'>real time</b> y
+            <b style='color:rgba(255,255,255,0.85)'>leads</b>, desde una sola base consolidada.
         </div>
         <div class='hero-divider'></div>
         <div class='hero-cards'>
@@ -644,9 +656,9 @@ st.markdown(
 "<div class='nticker-label'><span class='nticker-dot'></span>EN VIVO</div>"
 "<div class='nticker-track'><div class='nticker-inner'>"
 "<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles y Contactabilidad, en construcción <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles, Real time y Leads, en construcción <span class='nticker-sep'>·</span></div>"
 "<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles y Contactabilidad, en construcción <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles, Real time y Leads, en construcción <span class='nticker-sep'>·</span></div>"
 "</div></div></div>",
 unsafe_allow_html=True)
 
@@ -766,7 +778,7 @@ st.markdown("""
     </div>
     <div class='stat' style='--sc:#A78BFA'>
         <div class='stat-ico'>🧩</div>
-        <div class='stat-val'>4</div>
+        <div class='stat-val'>5</div>
         <div class='stat-lbl'>Módulos Totales</div>
     </div>
     <div class='stat' style='--sc:#FBBF24'>

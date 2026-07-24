@@ -34,7 +34,7 @@ st.markdown("""
 st.markdown("""
 <div class='wip'>
     <div class='wip-ico'>📞</div>
-    <div class='wip-title'>Contactabilidad</div>
+    <div class='wip-title'>Real time</div>
     <div class='wip-sub'>
         Este módulo está en construcción. Aquí vivirá la efectividad de contacto por asesor:
         intentos por lead, tasa de contacto efectivo y las franjas horarias con mejor respuesta.

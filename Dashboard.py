@@ -15,7 +15,8 @@ home_pg  = st.Page("home.py",                 title="Inicio",         icon="🏠
 insc_pg  = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 mat_pg   = st.Page("pages/2_Matriculas.py",    title="Matrículas",    icon="🎓")
 cuart_pg = st.Page("pages/3_Cuartiles.py",     title="Cuartiles",     icon="🏆")
-cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Contactabilidad", icon="📞")
+cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
+leads_pg = st.Page("pages/5_Leads.py",          title="Leads",     icon="🎯")
 
-pg = st.navigation([home_pg, insc_pg, mat_pg, cuart_pg, cont_pg])
+pg = st.navigation([home_pg, insc_pg, mat_pg, cuart_pg, cont_pg, leads_pg])
 pg.run()
