@@ -22,20 +22,22 @@ _MODULOS = {
         acbord="rgba(56,189,248,0.45)", page=insc_pg, cta="Abrir módulo →",
     ),
     "mat": dict(
-        icon="🎓", title="Matrículas", status="wip", status_label="Próximamente", progress=40,
+        icon="🎓", title="Matrículas", status="ok", status_label="Disponible", progress=100,
         desc="Seguimiento del proceso de matrícula: período, paquete inscrito y estatus del alumno, una vez completada la inscripción.",
-        feats=["Por período y programa", "Tipo de admisión", "Seguimiento financiero"],
+        feats=["Avance vs. meta por supervisor", "Financiación y tipo de admisión", "Tendencia diaria"],
+        stats=[("🧭", "7", "Filtros activos"), ("📊", "9", "Gráficas y tablas"), ("⚡", "5 min", "Refresco de datos")],
         ac1="#8B5CF6", ac2="#EC4899",
         icobg="linear-gradient(135deg,rgba(139,92,246,0.22),rgba(236,72,153,0.10))",
-        acbord="rgba(167,139,250,0.45)", page=mat_pg, cta="Ver avance →",
+        acbord="rgba(167,139,250,0.45)", page=mat_pg, cta="Abrir módulo →",
     ),
     "cuart": dict(
-        icon="🏆", title="Cuartiles", status="wip", status_label="Próximamente", progress=20,
+        icon="🏆", title="Cuartiles", status="ok", status_label="Disponible", progress=100,
         desc="Clasificación de asesores por desempeño en cuartiles, para identificar a los mejores y a quiénes necesitan refuerzo.",
-        feats=["Ranking por cuartil", "Comparativo entre supervisores", "Evolución histórica"],
+        feats=["Ranking por cuartil", "Insumo vs. conversión", "Evolución de 3 meses"],
+        stats=[("🧭", "2", "Filtros activos"), ("📊", "7", "Gráficas y tablas"), ("⚡", "5 min", "Refresco de datos")],
         ac1="#34D399", ac2="#059669",
         icobg="linear-gradient(135deg,rgba(52,211,153,0.22),rgba(5,150,105,0.10))",
-        acbord="rgba(52,211,153,0.45)", page=cuart_pg, cta="Ver avance →",
+        acbord="rgba(52,211,153,0.45)", page=cuart_pg, cta="Abrir módulo →",
     ),
     "cont": dict(
         icon="📞", title="Real time", status="wip", status_label="En desarrollo", progress=10,
@@ -46,12 +48,13 @@ _MODULOS = {
         acbord="rgba(249,115,22,0.45)", page=cont_pg, cta="Ver avance →",
     ),
     "leads": dict(
-        icon="🎯", title="Leads", status="wip", status_label="En desarrollo", progress=5,
-        desc="Seguimiento del origen y calidad de los leads antes de convertirse en inscripción: fuente, campaña y estado de calificación.",
-        feats=["Origen y campaña", "Calificación de leads", "Conversión a inscripción"],
+        icon="🎯", title="Leads", status="ok", status_label="Disponible", progress=100,
+        desc="Seguimiento del insumo (leads asignados) por asesor, supervisor y coordinador, con tendencia diaria y cruce con matrículas en Cuartiles.",
+        feats=["Insumo por experto", "Por supervisor y coordinador", "Tendencia diaria"],
+        stats=[("🧭", "2", "Filtros activos"), ("📊", "5", "Gráficas y tablas"), ("⚡", "5 min", "Refresco de datos")],
         ac1="#F43F5E", ac2="#FB7185",
         icobg="linear-gradient(135deg,rgba(244,63,94,0.22),rgba(251,113,133,0.10))",
-        acbord="rgba(244,63,94,0.45)", page=leads_pg, cta="Ver avance →",
+        acbord="rgba(244,63,94,0.45)", page=leads_pg, cta="Abrir módulo →",
     ),
 }
 
@@ -357,79 +360,111 @@ st.markdown(f"""
         animation:sbcPulse 1.8s ease-in-out infinite; }}
 
     /* -- tarjetas del riel -- */
-    .rail-card-head {{ display:flex;align-items:center;gap:13px;position:relative;margin-bottom:16px; }}
-    .rail-ico {{ width:44px;height:44px;flex-shrink:0;border-radius:13px;display:flex;align-items:center;justify-content:center;
-        font-size:20px;background:var(--icobg);border:1px solid var(--acbord);
-        box-shadow:0 6px 16px -6px var(--ac1); transition:transform .25s cubic-bezier(.2,.8,.2,1); }}
-    .rail-txt {{ display:flex;flex-direction:column;gap:7px;min-width:0; }}
-    .rail-title {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:15px;color:white;
-        letter-spacing:-0.1px;line-height:1.2; }}
+    .rail-card-head {{ display:flex;align-items:center;gap:13px;position:relative;z-index:1;margin-bottom:14px; }}
+    .rail-ico {{ width:48px;height:48px;flex-shrink:0;border-radius:14px;display:flex;align-items:center;justify-content:center;
+        font-size:22px;background:var(--icobg);border:1px solid var(--acbord);
+        box-shadow:0 8px 22px -7px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.20);
+        transition:transform .3s cubic-bezier(.2,.8,.2,1); }}
+    .rail-txt {{ display:flex;flex-direction:column;gap:6px;min-width:0;flex:1; }}
+    .rail-title {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:15.5px;color:white;
+        letter-spacing:-0.2px;line-height:1.15; }}
     .rail-status {{ display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800;
         padding:3px 9px;border-radius:99px;letter-spacing:0.07em;text-transform:uppercase;align-self:flex-start; }}
     .rail-status-ok {{ background:rgba(52,211,153,0.14);color:#34D399;border:1px solid rgba(52,211,153,0.30); }}
     .rail-status-wip {{ background:rgba(245,158,11,0.14);color:#FCD34D;border:1px solid rgba(245,158,11,0.30); }}
     .rail-status .dot {{ width:5px;height:5px;border-radius:50%;background:currentColor; }}
+    .rail-chevron {{ flex-shrink:0;font-size:23px;color:rgba(255,255,255,0.20);line-height:1;margin-right:2px;
+        transition:color .25s ease,transform .25s ease; }}
     .rail-active-flag {{ display:none; }}
-    .rail-div {{ height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.12),transparent);margin-bottom:2px; }}
+    .rail-div {{ position:relative;z-index:1;height:1px;background:linear-gradient(90deg,var(--ac1),transparent);opacity:.32;margin-bottom:2px; }}
 
     .st-key-railitem_insc, .st-key-railitem_mat, .st-key-railitem_cuart, .st-key-railitem_cont, .st-key-railitem_leads {{
-        position:relative;border-radius:18px;padding:14px 16px 8px;margin-bottom:12px;overflow:hidden;
-        background:linear-gradient(160deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.015) 100%);
-        border:1px solid rgba(255,255,255,0.09);
-        transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;
+        position:relative;border-radius:20px;padding:16px 18px 11px;margin-bottom:13px;overflow:hidden;
+        background:linear-gradient(160deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.018) 100%);
+        border:1px solid rgba(255,255,255,0.10);
+        box-shadow:0 10px 26px -18px rgba(0,0,0,0.65),inset 0 1px 0 rgba(255,255,255,0.05);
+        transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;
     }}
+    /* halo de color del acento, esquina superior-izquierda (junto al ícono) */
+    .st-key-railitem_insc::after, .st-key-railitem_mat::after, .st-key-railitem_cuart::after,
+    .st-key-railitem_cont::after, .st-key-railitem_leads::after {{
+        content:'';position:absolute;top:-48px;left:-38px;width:165px;height:165px;border-radius:50%;z-index:0;
+        background:radial-gradient(circle,var(--ac1),transparent 70%);opacity:0.10;pointer-events:none;transition:opacity .3s ease; }}
     .st-key-railitem_insc:hover, .st-key-railitem_mat:hover, .st-key-railitem_cuart:hover, .st-key-railitem_cont:hover, .st-key-railitem_leads:hover {{
-        transform:translateY(-3px);border-color:var(--acbord); }}
+        transform:translateY(-3px);border-color:var(--acbord);
+        box-shadow:0 20px 42px -20px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.08); }}
+    .st-key-railitem_insc:hover::after, .st-key-railitem_mat:hover::after, .st-key-railitem_cuart:hover::after,
+    .st-key-railitem_cont:hover::after, .st-key-railitem_leads:hover::after {{ opacity:0.18; }}
     .st-key-railitem_insc:hover .rail-ico, .st-key-railitem_mat:hover .rail-ico,
     .st-key-railitem_cuart:hover .rail-ico, .st-key-railitem_cont:hover .rail-ico, .st-key-railitem_leads:hover .rail-ico {{
-        transform:scale(1.08) rotate(-4deg); }}
+        transform:scale(1.06) rotate(-3deg); }}
+    .st-key-railitem_insc:hover .rail-chevron, .st-key-railitem_mat:hover .rail-chevron,
+    .st-key-railitem_cuart:hover .rail-chevron, .st-key-railitem_cont:hover .rail-chevron, .st-key-railitem_leads:hover .rail-chevron {{
+        color:var(--ac1);transform:translateX(3px); }}
     .st-key-railitem_insc:has(.rail-active-flag), .st-key-railitem_mat:has(.rail-active-flag),
     .st-key-railitem_cuart:has(.rail-active-flag), .st-key-railitem_cont:has(.rail-active-flag), .st-key-railitem_leads:has(.rail-active-flag) {{
         border-color:var(--acbord);
-        background:linear-gradient(160deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.025) 100%);
-        box-shadow:0 16px 36px -14px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.10); }}
+        background:linear-gradient(160deg,rgba(255,255,255,0.10) 0%,rgba(255,255,255,0.03) 100%);
+        box-shadow:0 18px 40px -16px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.12); }}
+    .st-key-railitem_insc:has(.rail-active-flag)::after, .st-key-railitem_mat:has(.rail-active-flag)::after,
+    .st-key-railitem_cuart:has(.rail-active-flag)::after, .st-key-railitem_cont:has(.rail-active-flag)::after, .st-key-railitem_leads:has(.rail-active-flag)::after {{ opacity:0.22; }}
+    .st-key-railitem_insc:has(.rail-active-flag) .rail-chevron, .st-key-railitem_mat:has(.rail-active-flag) .rail-chevron,
+    .st-key-railitem_cuart:has(.rail-active-flag) .rail-chevron, .st-key-railitem_cont:has(.rail-active-flag) .rail-chevron, .st-key-railitem_leads:has(.rail-active-flag) .rail-chevron {{ color:var(--ac1); }}
     .st-key-railitem_insc::before, .st-key-railitem_mat::before,
     .st-key-railitem_cuart::before, .st-key-railitem_cont::before, .st-key-railitem_leads::before {{
-        content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;
-        background:var(--ac1);opacity:0;transition:opacity .25s ease; }}
+        content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;z-index:2;
+        background:var(--ac1);box-shadow:0 0 12px var(--ac1);opacity:0;transition:opacity .25s ease; }}
     .st-key-railitem_insc:has(.rail-active-flag)::before, .st-key-railitem_mat:has(.rail-active-flag)::before,
     .st-key-railitem_cuart:has(.rail-active-flag)::before, .st-key-railitem_cont:has(.rail-active-flag)::before, .st-key-railitem_leads:has(.rail-active-flag)::before {{ opacity:1; }}
-    .st-key-railitem_insc  {{ --ac1:#0EA5E9;--ac2:#6366F1; --icobg:linear-gradient(135deg,rgba(14,165,233,0.24),rgba(99,102,241,0.10)); --acbord:rgba(56,189,248,0.5); }}
-    .st-key-railitem_mat   {{ --ac1:#8B5CF6;--ac2:#EC4899; --icobg:linear-gradient(135deg,rgba(139,92,246,0.24),rgba(236,72,153,0.10)); --acbord:rgba(167,139,250,0.5); }}
-    .st-key-railitem_cuart {{ --ac1:#34D399;--ac2:#059669; --icobg:linear-gradient(135deg,rgba(52,211,153,0.24),rgba(5,150,105,0.10)); --acbord:rgba(52,211,153,0.5); }}
-    .st-key-railitem_cont  {{ --ac1:#F97316;--ac2:#F59E0B; --icobg:linear-gradient(135deg,rgba(249,115,22,0.24),rgba(245,158,11,0.10)); --acbord:rgba(249,115,22,0.5); }}
-    .st-key-railitem_leads {{ --ac1:#F43F5E;--ac2:#FB7185; --icobg:linear-gradient(135deg,rgba(244,63,94,0.24),rgba(251,113,133,0.10)); --acbord:rgba(244,63,94,0.5); }}
+    .st-key-railitem_insc  {{ --ac1:#0EA5E9;--ac2:#6366F1; --icobg:linear-gradient(135deg,rgba(14,165,233,0.28),rgba(99,102,241,0.12)); --acbord:rgba(56,189,248,0.5); }}
+    .st-key-railitem_mat   {{ --ac1:#8B5CF6;--ac2:#EC4899; --icobg:linear-gradient(135deg,rgba(139,92,246,0.28),rgba(236,72,153,0.12)); --acbord:rgba(167,139,250,0.5); }}
+    .st-key-railitem_cuart {{ --ac1:#34D399;--ac2:#059669; --icobg:linear-gradient(135deg,rgba(52,211,153,0.28),rgba(5,150,105,0.12)); --acbord:rgba(52,211,153,0.5); }}
+    .st-key-railitem_cont  {{ --ac1:#F97316;--ac2:#F59E0B; --icobg:linear-gradient(135deg,rgba(249,115,22,0.28),rgba(245,158,11,0.12)); --acbord:rgba(249,115,22,0.5); }}
+    .st-key-railitem_leads {{ --ac1:#F43F5E;--ac2:#FB7185; --icobg:linear-gradient(135deg,rgba(244,63,94,0.28),rgba(251,113,133,0.12)); --acbord:rgba(244,63,94,0.5); }}
 
     .st-key-railitem_insc div[data-testid="stButton"], .st-key-railitem_mat div[data-testid="stButton"],
     .st-key-railitem_cuart div[data-testid="stButton"], .st-key-railitem_cont div[data-testid="stButton"], .st-key-railitem_leads div[data-testid="stButton"] {{
-        margin-top:8px; }}
+        margin-top:6px;position:relative;z-index:1; }}
     .st-key-railitem_insc div[data-testid="stButton"] > button, .st-key-railitem_mat div[data-testid="stButton"] > button,
     .st-key-railitem_cuart div[data-testid="stButton"] > button, .st-key-railitem_cont div[data-testid="stButton"] > button, .st-key-railitem_leads div[data-testid="stButton"] > button {{
-        height:32px!important;min-height:32px!important;padding:0 4px!important;
-        background:transparent!important;border:none!important;box-shadow:none!important;
-        color:rgba(255,255,255,0.38)!important;font-size:10.5px!important;font-weight:700!important;
-        text-align:center!important;justify-content:center!important;letter-spacing:0.03em!important; }}
-    .st-key-railitem_insc div[data-testid="stButton"] > button:hover {{ color:#0EA5E9!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_mat div[data-testid="stButton"] > button:hover {{ color:#8B5CF6!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_cuart div[data-testid="stButton"] > button:hover {{ color:#34D399!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_cont div[data-testid="stButton"] > button:hover {{ color:#F97316!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_leads div[data-testid="stButton"] > button:hover {{ color:#F43F5E!important;transform:none!important;box-shadow:none!important; }}
+        height:36px!important;min-height:36px!important;padding:0 12px!important;border-radius:11px!important;
+        background:rgba(255,255,255,0.035)!important;border:1px solid rgba(255,255,255,0.12)!important;box-shadow:none!important;
+        color:rgba(255,255,255,0.60)!important;font-size:11px!important;font-weight:700!important;
+        text-align:center!important;justify-content:center!important;letter-spacing:0.02em!important;transition:all .2s ease!important; }}
+    .st-key-railitem_insc div[data-testid="stButton"] > button:hover, .st-key-railitem_mat div[data-testid="stButton"] > button:hover,
+    .st-key-railitem_cuart div[data-testid="stButton"] > button:hover, .st-key-railitem_cont div[data-testid="stButton"] > button:hover, .st-key-railitem_leads div[data-testid="stButton"] > button:hover {{
+        background:var(--icobg)!important;border-color:var(--acbord)!important;color:#fff!important;transform:none!important; }}
+    .st-key-railitem_insc:has(.rail-active-flag) div[data-testid="stButton"] > button, .st-key-railitem_mat:has(.rail-active-flag) div[data-testid="stButton"] > button,
+    .st-key-railitem_cuart:has(.rail-active-flag) div[data-testid="stButton"] > button, .st-key-railitem_cont:has(.rail-active-flag) div[data-testid="stButton"] > button, .st-key-railitem_leads:has(.rail-active-flag) div[data-testid="stButton"] > button {{
+        background:var(--icobg)!important;border-color:var(--acbord)!important;color:#fff!important;box-shadow:0 8px 20px -10px var(--ac1)!important; }}
     .st-key-railitem_insc div[data-testid="stButton"] > button p, .st-key-railitem_mat div[data-testid="stButton"] > button p,
     .st-key-railitem_cuart div[data-testid="stButton"] > button p, .st-key-railitem_cont div[data-testid="stButton"] > button p, .st-key-railitem_leads div[data-testid="stButton"] > button p {{
         text-align:center!important; }}
+
+    /* -- riel y panel a la misma altura: el panel crece (flex) hasta llenar lo que
+       mide el riel de la izquierda, en vez de quedarse en su alto mínimo fijo -- */
+    div[data-testid="stHorizontalBlock"]:has(.st-key-mod_panel_wrap) {{ align-items:stretch; }}
+    div[data-testid="stHorizontalBlock"]:has(.st-key-mod_panel_wrap) > div[data-testid="stColumn"] {{
+        display:flex;flex-direction:column; }}
+    div[data-testid="stHorizontalBlock"]:has(.st-key-mod_panel_wrap) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {{
+        flex:1 1 auto;display:flex;flex-direction:column; }}
+    .st-key-mod_panel_wrap {{ flex:1 1 auto;display:flex;flex-direction:column; }}
+    .st-key-mod_panel_wrap [data-testid="stElementContainer"] {{ flex:1 1 auto;display:flex; }}
 
     /* -- panel de detalle -- */
     .mod-panel {{ position:relative;overflow:hidden;border-radius:24px;padding:32px 34px 28px;
         background:linear-gradient(160deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
         border:1px solid rgba(255,255,255,0.10);
         box-shadow:0 24px 60px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.09);
-        min-height:460px;display:flex;flex-direction:column;animation:fadeUp .5s ease both; }}
+        min-height:460px;flex:1 1 auto;display:flex;flex-direction:column;animation:fadeUp .5s ease both; }}
     .mod-panel::before {{ content:'';position:absolute;inset:0;z-index:0;
         background-image:linear-gradient(rgba(255,255,255,0.035) 1px,transparent 1px),
                          linear-gradient(90deg,rgba(255,255,255,0.035) 1px,transparent 1px);
         background-size:38px 38px;
         mask-image:radial-gradient(ellipse 70% 70% at 85% 15%,black,transparent 78%);
         -webkit-mask-image:radial-gradient(ellipse 70% 70% at 85% 15%,black,transparent 78%); }}
+    .mod-panel::after {{ content:'';position:absolute;top:0;left:24px;right:24px;height:1px;z-index:1;
+        background:linear-gradient(90deg,transparent,var(--ac1),transparent);opacity:.55; }}
     .mod-panel-glow {{ position:absolute;top:-90px;right:-90px;width:260px;height:260px;border-radius:50%;
         background:radial-gradient(circle,var(--ac1),transparent 70%);opacity:0.20;pointer-events:none;
         animation:auroraMove 16s ease-in-out infinite; }}
@@ -455,18 +490,26 @@ st.markdown(f"""
     .mod-panel-desc {{ font-size:14px;color:rgba(255,255,255,0.60);line-height:1.8;
         margin:0 0 20px;max-width:540px;position:relative;z-index:1; }}
     .mod-panel-feats {{ display:flex;flex-wrap:wrap;gap:9px;margin-bottom:24px;position:relative;z-index:1; }}
-    .pfeat {{ font-size:11.5px;color:rgba(255,255,255,0.78);background:rgba(255,255,255,0.05);
-        border:1px solid rgba(255,255,255,0.11);padding:7px 13px;border-radius:9px;font-weight:600;
-        display:inline-flex;align-items:center;gap:6px; }}
+    .pfeat {{ font-size:11.5px;color:rgba(255,255,255,0.85);background:var(--icobg);
+        border:1px solid rgba(255,255,255,0.12);padding:7px 13px;border-radius:9px;font-weight:600;
+        display:inline-flex;align-items:center;gap:7px; }}
+    .pfeat::before {{ content:'';width:6px;height:6px;border-radius:50%;background:var(--ac1);
+        box-shadow:0 0 7px var(--ac1);flex-shrink:0; }}
 
     /* -- trío de stats (módulo disponible) -- */
     .mod-stat-trio {{ display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;position:relative;z-index:1; }}
-    .mod-stat {{ text-align:center;padding:16px 10px;border-radius:14px;
-        background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09); }}
-    .mod-stat-ico {{ font-size:19px;margin-bottom:8px; }}
-    .mod-stat-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:19px;font-weight:700;color:white;
+    .mod-stat {{ text-align:center;padding:18px 10px 15px;border-radius:16px;position:relative;overflow:hidden;
+        background:linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.015));
+        border:1px solid rgba(255,255,255,0.09);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05);
+        transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease; }}
+    .mod-stat::before {{ content:'';position:absolute;top:0;left:22%;right:22%;height:2px;border-radius:2px;
+        background:var(--ac1);box-shadow:0 0 10px var(--ac1);opacity:.75; }}
+    .mod-stat:hover {{ transform:translateY(-3px);border-color:var(--acbord);
+        box-shadow:0 14px 30px -16px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.08); }}
+    .mod-stat-ico {{ font-size:20px;margin-bottom:8px; }}
+    .mod-stat-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:20px;font-weight:700;color:white;
         line-height:1;margin-bottom:5px; }}
-    .mod-stat-lbl {{ font-size:9.5px;color:rgba(255,255,255,0.42);text-transform:uppercase;letter-spacing:0.06em;font-weight:700; }}
+    .mod-stat-lbl {{ font-size:9.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.06em;font-weight:700; }}
 
     /* -- etapas de avance (módulo en desarrollo) -- */
     .mod-stages {{ display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;position:relative;z-index:1; }}
@@ -488,8 +531,8 @@ st.markdown(f"""
     .mspark2 {{ display:flex;align-items:flex-end;gap:4px;height:40px; }}
     .mspark2 span {{ width:6px;border-radius:3px;background:var(--ac1);opacity:.75; }}
     .mod-panel-livechip {{ display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;
-        color:rgba(255,255,255,0.82);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
-        padding:7px 14px;border-radius:10px; }}
+        color:rgba(255,255,255,0.88);background:var(--icobg);border:1px solid var(--acbord);
+        padding:8px 15px;border-radius:11px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08); }}
     .mod-panel-note {{ display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.45);
         font-style:italic; }}
 
@@ -655,10 +698,10 @@ st.markdown(
 "<div class='nticker-shell'>"
 "<div class='nticker-label'><span class='nticker-dot'></span>EN VIVO</div>"
 "<div class='nticker-track'><div class='nticker-inner'>"
-"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles, Real time y Leads, en construcción <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles, Real time y Leads, en construcción <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Inscripciones, Matrículas, Cuartiles y Leads ya disponibles <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Real time, en construcción <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Inscripciones, Matrículas, Cuartiles y Leads ya disponibles <span class='nticker-sep'>·</span></div>"
+"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Real time, en construcción <span class='nticker-sep'>·</span></div>"
 "</div></div></div>",
 unsafe_allow_html=True)
 
@@ -683,11 +726,12 @@ with rail_col:
                 f"<div class='rail-title'>{m['title']}</div>"
                 f"<span class='rail-status {badge_cls}'><span class='dot'></span>{m['status_label']}</span>"
                 "</div>"
+                "<div class='rail-chevron'>›</div>"
                 f"</div>{active_flag}"
                 "<div class='rail-div'></div>",
                 unsafe_allow_html=True,
             )
-            if st.button("● viendo ahora" if active else "ver este módulo  →",
+            if st.button("● Viendo ahora" if active else "Ver módulo  →",
                          key=f"railbtn_{key}", width="stretch"):
                 st.session_state.home_mod = key
 
@@ -758,18 +802,31 @@ with panel_col:
         f"{foot_html}"
         "</div>"
     )
-    st.markdown(panel_html, unsafe_allow_html=True)
-    if st.button(m["cta"], key=f"panel_cta_{st.session_state.home_mod}", width="stretch",
-                 type="primary" if m["status"] == "ok" else "secondary"):
-        st.switch_page(m["page"])
+    if m["status"] == "ok":
+        # CTA teñido al color del módulo (si no, el botón azul-morado fijo choca con paneles rosa/verde)
+        panel_html += (
+            "<style>"
+            f".st-key-panel_cta div[data-testid='stButton']>button{{"
+            f"background:linear-gradient(120deg,{m['ac1']},{m['ac2']})!important;border:none!important;"
+            f"box-shadow:0 12px 32px -8px {m['ac1']}!important;}}"
+            f".st-key-panel_cta div[data-testid='stButton']>button:hover{{"
+            f"filter:brightness(1.08)!important;box-shadow:0 18px 44px -10px {m['ac1']}!important;}}"
+            "</style>"
+        )
+    with st.container(key="mod_panel_wrap"):
+        st.markdown(panel_html, unsafe_allow_html=True)
+    with st.container(key="panel_cta"):
+        if st.button(m["cta"], key=f"panel_cta_{st.session_state.home_mod}", width="stretch",
+                     type="primary" if m["status"] == "ok" else "secondary"):
+            st.switch_page(m["page"])
 
 # ── STATS ─────────────────────────────────
 st.markdown("""
 <div class='stats'>
     <div class='stat' style='--sc:#38BDF8'>
         <div class='stat-ico'>📝</div>
-        <div class='stat-val'>1</div>
-        <div class='stat-lbl'>Módulo Disponible</div>
+        <div class='stat-val'>4</div>
+        <div class='stat-lbl'>Módulos Disponibles</div>
     </div>
     <div class='stat' style='--sc:#34D399'>
         <div class='stat-ico'>📅</div>

@@ -454,6 +454,22 @@ st.markdown(f"""
     .avance-tabla-wrap::-webkit-scrollbar-track {{ background:rgba(255,255,255,0.04); }}
     .avance-tabla-wrap::-webkit-scrollbar-thumb {{ background:rgba(244,63,94,0.35);border-radius:99px; }}
 
+    /* ── Tabla de asesores: columnas angostas y fijas (si no, el navegador estira
+       cada columna para llenar el ancho disponible aunque el texto sea corto) ── */
+    .st-key-tabla_usuarios_leads .avance-tabla {{ width:auto;table-layout:fixed; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(1),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(1) {{ width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(2),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(2) {{ width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(3),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(3) {{ width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(4),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(4) {{ width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(5),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(5) {{ width:90px; }}
+    .st-key-tabla_usuarios_leads .avance-tabla th:nth-child(6),
+    .st-key-tabla_usuarios_leads .avance-tabla td:nth-child(6) {{ width:90px; }}
+
     /* ── Sidebar base ── */
     section[data-testid="stSidebar"] > div:first-child {{
         background:

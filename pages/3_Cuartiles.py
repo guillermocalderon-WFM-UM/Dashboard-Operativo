@@ -114,7 +114,7 @@ def _cargar_leads() -> pd.DataFrame:
 
 _COLS_CLASIFICACION = [
     "ASESOR", "SUPERVISOR", "META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO",
-    "CUMPL_INSC", "CUMPL_MAT", "CUARTIL",
+    "CUMPL_INSC", "CUMPL_MAT", "CUARTIL", "CUARTIL_INSC",
 ]
 
 
@@ -172,24 +172,87 @@ def _tabla_clasificacion(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFr
 
     if len(tabla) >= 4:
         tabla["CUARTIL"] = pd.qcut(tabla["REAL_MAT"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        tabla["CUARTIL_INSC"] = pd.qcut(tabla["REAL_INSC"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
     else:
         tabla["CUARTIL"] = "Q4"
+        tabla["CUARTIL_INSC"] = "Q4"
 
     tabla = tabla[_COLS_CLASIFICACION].sort_values("REAL_MAT", ascending=False)
     return tabla.reset_index(drop=True)
 
 
-def _historico_cuartiles(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame, meses: list[str]) -> pd.DataFrame:
-    filas = []
-    for mes in meses:
+def _tabla_evolucion_reciente(
+    mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame,
+    meses_disponibles: list[str], n_meses: int = 3,
+) -> tuple[list[dict], list[str]]:
+    """Una fila por asesor con Matrículas/Inscripciones/Cuartil (de cada métrica) de cada uno
+    de los últimos n_meses, más un cuartil CONSOLIDADO por métrica (calculado sobre la suma de
+    los n_meses, no mes a mes) y si evolucionó (comparando su primer y último cuartil de
+    matrículas válido en la ventana). Universo = unión de asesores clasificados en cualquiera
+    de esos meses (todos los expertos, no sólo los del mes más reciente)."""
+    meses_recientes = meses_disponibles[-n_meses:]
+    tablas_mes = {}
+    for mes in meses_recientes:
         t = _tabla_clasificacion(mat, insc, metas, leads, mes)
-        if len(t):
-            t = t[["ASESOR", "CUARTIL"]].copy()
-            t["MES"] = mes
-            filas.append(t)
-    if not filas:
-        return pd.DataFrame(columns=["ASESOR", "MES", "CUARTIL"])
-    return pd.concat(filas, ignore_index=True)
+        # Un mismo nombre puede tener dos cédulas distintas en la base (dato duplicado/reingreso);
+        # sin agrupar, t.loc[asesor] devolvería 2 filas en vez de 1 y rompería el resto de la función.
+        tablas_mes[mes] = t.groupby("ASESOR", as_index=True).agg(
+            SUPERVISOR=("SUPERVISOR", "first"),
+            REAL_MAT=("REAL_MAT", "sum"),
+            REAL_INSC=("REAL_INSC", "sum"),
+            CUARTIL=("CUARTIL", "first"),
+            CUARTIL_INSC=("CUARTIL_INSC", "first"),
+        )
+
+    todos_asesores = set()
+    for t in tablas_mes.values():
+        todos_asesores.update(t.index)
+
+    filas = []
+    for asesor in todos_asesores:
+        supervisor = "Sin asignar"
+        cuartiles_validos = []
+        meses_data = []
+        mat_total = insc_total = 0
+        for mes in meses_recientes:
+            t = tablas_mes[mes]
+            if asesor in t.index:
+                row = t.loc[asesor]
+                supervisor = row["SUPERVISOR"]
+                meses_data.append({
+                    "MAT": int(row["REAL_MAT"]), "CUARTIL": row["CUARTIL"],
+                    "INSC": int(row["REAL_INSC"]), "CUARTIL_INSC": row["CUARTIL_INSC"],
+                })
+                cuartiles_validos.append(_CUARTIL_NUM[row["CUARTIL"]])
+                mat_total += int(row["REAL_MAT"])
+                insc_total += int(row["REAL_INSC"])
+            else:
+                meses_data.append(None)
+
+        delta = cuartiles_validos[-1] - cuartiles_validos[0] if len(cuartiles_validos) >= 2 else None
+
+        filas.append({
+            "ASESOR": asesor, "SUPERVISOR": supervisor, "MESES": meses_data,
+            "MAT_TOTAL": mat_total, "INSC_TOTAL": insc_total, "DELTA": delta,
+        })
+
+    # Cuartil consolidado: se calcula sobre la suma de los n_meses de TODO el universo, no
+    # promediando los cuartiles mensuales (evita que un mes malo puntual pese más de la cuenta).
+    if len(filas) >= 4:
+        mat_totales = pd.Series([f["MAT_TOTAL"] for f in filas])
+        insc_totales = pd.Series([f["INSC_TOTAL"] for f in filas])
+        q_mat = pd.qcut(mat_totales.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        q_insc = pd.qcut(insc_totales.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        for f, qm, qi in zip(filas, q_mat, q_insc):
+            f["CUARTIL_MAT_CONSOLIDADO"] = qm
+            f["CUARTIL_INSC_CONSOLIDADO"] = qi
+    else:
+        for f in filas:
+            f["CUARTIL_MAT_CONSOLIDADO"] = "Q4"
+            f["CUARTIL_INSC_CONSOLIDADO"] = "Q4"
+
+    filas.sort(key=lambda f: f["MAT_TOTAL"], reverse=True)
+    return filas, meses_recientes
 
 
 # ─────────────────────────────────────────────
@@ -325,46 +388,68 @@ def _fig_cuartil_supervisor(tabla: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _fig_evolucion(hist: pd.DataFrame, meses_orden: list[str], top_n: int = 30) -> go.Figure:
-    d = hist.copy()
-    d["_NUM"] = d["CUARTIL"].map(_CUARTIL_NUM)
-    piv = d.pivot_table(index="ASESOR", columns="MES", values="_NUM", aggfunc="first")
-    piv = piv.reindex(columns=[m for m in meses_orden if m in piv.columns])
-
-    # Orden: primero quién tiene más meses con dato (más "evolución" que mostrar),
-    # y entre empates el de mejor cuartil promedio. Sin este tope, con 200+ asesores
-    # el heatmap crecía sin límite (scroll interminable).
-    meses_con_dato = piv.notna().sum(axis=1)
-    promedio = piv.mean(axis=1, skipna=True)
-    orden = pd.DataFrame({"meses": meses_con_dato, "prom": promedio}).sort_values(
-        ["meses", "prom"], ascending=[False, False]
-    ).index
-    piv = piv.loc[orden]
-    if top_n:
-        piv = piv.head(top_n)
-
-    fig = go.Figure(go.Heatmap(
-        z=piv.values, x=list(piv.columns), y=list(piv.index),
-        colorscale=[
-            [0.0, _COLOR_CUARTIL["Q1"]], [0.33, _COLOR_CUARTIL["Q1"]],
-            [0.34, _COLOR_CUARTIL["Q2"]], [0.66, _COLOR_CUARTIL["Q2"]],
-            [0.67, _COLOR_CUARTIL["Q3"]], [0.99, _COLOR_CUARTIL["Q3"]],
-            [1.0, _COLOR_CUARTIL["Q4"]],
-        ],
-        zmin=1, zmax=4,
-        xgap=3, ygap=3,
-        colorbar=dict(title="Cuartil", tickvals=[1.35, 2.0, 2.65, 3.5], ticktext=["Q1", "Q2", "Q3", "Q4"],
-                      tickfont=dict(color="rgba(255,255,255,0.7)", size=10), outlinewidth=0),
-        hovertemplate="<b>%{y}</b><br>%{x}: Q%{z}<extra></extra>",
-    ))
-    fig.update_layout(
-        height=max(300, len(piv) * 22 + 80), margin=dict(l=10, r=10, t=10, b=30),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=10, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(side="bottom", tickfont=dict(size=10, color="rgba(255,255,255,0.62)"), automargin=True),
-        yaxis=dict(tickfont=dict(size=9, color="rgba(255,255,255,0.62)"), automargin=True, autorange="reversed"),
+# ─────────────────────────────────────────────
+# TABLA HTML — Evolución reciente (últimos N meses)
+# ─────────────────────────────────────────────
+def _qcell_html(valor: int, cuartil: str) -> str:
+    color_q = _COLOR_CUARTIL.get(cuartil, "#94A3B8")
+    return (
+        "<td class='qcell'>"
+        f"<span class='qcell-val'>{valor}</span>"
+        f"<span class='cuartil-badge qcell-badge' style='background:{color_q}22;color:{color_q};border-color:{color_q}66'>{cuartil}</span>"
+        "</td>"
     )
-    return fig
+
+
+def _celda_mes_html(datos_mes) -> str:
+    if not datos_mes:
+        return "<td class='mes-vacio'>—</td><td class='mes-vacio'>—</td>"
+    return _qcell_html(datos_mes["MAT"], datos_mes["CUARTIL"]) + _qcell_html(datos_mes["INSC"], datos_mes["CUARTIL_INSC"])
+
+
+def _badge_evolucion_html(delta) -> str:
+    if delta is None:
+        return "<span class='evo-badge evo-na'>Sin datos</span>"
+    if delta > 0:
+        return "<span class='evo-badge evo-up'>▲ Subió</span>"
+    if delta < 0:
+        return "<span class='evo-badge evo-down'>▼ Bajó</span>"
+    return "<span class='evo-badge evo-flat'>● Se mantuvo</span>"
+
+
+def _fila_evolucion_html(fila: dict) -> str:
+    celdas_meses = "".join(_celda_mes_html(m) for m in fila["MESES"])
+    celda_consolidado = _qcell_html(fila["MAT_TOTAL"], fila["CUARTIL_MAT_CONSOLIDADO"]) + _qcell_html(fila["INSC_TOTAL"], fila["CUARTIL_INSC_CONSOLIDADO"])
+    return (
+        "<tr>"
+        f"<td class='sup-cell'>{fila['ASESOR']}</td>"
+        f"<td>{fila['SUPERVISOR']}</td>"
+        f"{celdas_meses}"
+        f"{celda_consolidado}"
+        f"<td>{_badge_evolucion_html(fila['DELTA'])}</td>"
+        "</tr>"
+    )
+
+
+def _render_tabla_evolucion(filas: list[dict], meses_recientes: list[str]):
+    rows_html = "".join(_fila_evolucion_html(f) for f in filas)
+    meses_headers = "".join(f"<th class='grp-mes' colspan='2'>{mes}</th>" for mes in meses_recientes)
+    meses_subheaders = "".join(
+        "<th class='grp-mes'>Mat.</th><th class='grp-mes'>Insc.</th>" for _ in meses_recientes
+    )
+    table_html = (
+        "<div class='avance-tabla-wrap'><table class='avance-tabla'><thead>"
+        "<tr><th class='grp-sup' rowspan='2'>Asesor</th><th class='grp-sup' rowspan='2'>Supervisor</th>"
+        f"{meses_headers}"
+        "<th class='grp-consolidado' colspan='2'>Consolidado (3 meses)</th>"
+        "<th class='grp-total' rowspan='2'>Evolución</th></tr>"
+        f"<tr>{meses_subheaders}<th class='grp-consolidado'>Mat.</th><th class='grp-consolidado'>Insc.</th></tr>"
+        "</thead><tbody>"
+        f"{rows_html}"
+        "</tbody></table></div>"
+    )
+    with st.container(key="tabla_evolucion"):
+        st.markdown(table_html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -655,6 +740,19 @@ st.markdown(f"""
     .avance-tabla-wrap::-webkit-scrollbar-thumb {{ background:rgba(56,189,248,0.35);border-radius:99px; }}
     .cuartil-badge {{ display:inline-block;padding:3px 13px;border-radius:99px;font-weight:800;font-size:11px;border:1px solid;letter-spacing:0.03em; }}
 
+    /* ── Tabla Evolución reciente (últimos N meses) ── */
+    .avance-tabla thead th.grp-mes {{ background:linear-gradient(180deg, rgba(129,140,248,0.20), rgba(129,140,248,0.07)); }}
+    .avance-tabla thead th.grp-consolidado {{ background:linear-gradient(180deg, rgba(244,63,94,0.22), rgba(244,63,94,0.08)); }}
+    .avance-tabla td.mes-vacio {{ color:rgba(255,255,255,0.25); }}
+    .qcell {{ white-space:nowrap; }}
+    .qcell-val {{ font-weight:700;color:white;margin-right:7px; }}
+    .qcell-badge {{ padding:2px 9px !important;font-size:9.5px !important; }}
+    .evo-badge {{ display:inline-flex;align-items:center;gap:4px;padding:3px 11px;border-radius:99px;font-weight:800;font-size:10.5px;white-space:nowrap; }}
+    .evo-up {{ background:rgba(52,211,153,0.16);color:{COLOR_SUCCESS}; }}
+    .evo-down {{ background:rgba(239,68,68,0.16);color:{COLOR_DANGER}; }}
+    .evo-flat {{ background:rgba(148,163,184,0.16);color:#94A3B8; }}
+    .evo-na {{ background:rgba(148,163,184,0.08);color:rgba(255,255,255,0.30); }}
+
     /* ── Listas "Top" (rankings) ── */
     .top-list {{ display:flex;flex-direction:column;gap:8px; }}
     .top-row {{ display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:12px;
@@ -848,6 +946,51 @@ with k4:
     </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+# EVOLUCIÓN RECIENTE (ÚLTIMOS 3 MESES) — primera tabla del módulo
+# ─────────────────────────────────────────────
+_N_MESES_EVOLUCION = 3
+_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(
+    mat_full, insc_full, metas_full, leads_full, meses_disponibles, n_meses=_N_MESES_EVOLUCION
+)
+
+st.markdown(f"""
+<div class='sec-header' style='--sc:{COLOR_ACCENT}'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
+    <div class='sec-text'>
+        <div class='sec-title'>Evolución Reciente</div>
+        <div class='sec-desc'>Matrículas e inscripciones de cada asesor en {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"}, con su cuartil por cada métrica — y un cuartil consolidado sobre la suma de los 3 meses.</div>
+    </div>
+    <span class='sec-tag' style='background:{COLOR_ACCENT}'>{len(_filas_evolucion)} asesores</span>
+</div>
+""", unsafe_allow_html=True)
+
+if _filas_evolucion:
+    _render_tabla_evolucion(_filas_evolucion, _meses_evolucion)
+else:
+    st.caption("Sin histórico suficiente para mostrar la evolución.")
+
+# ─────────────────────────────────────────────
+# DISTRIBUCIÓN DEL CUARTIL CONSOLIDADO POR SUPERVISOR
+# ─────────────────────────────────────────────
+st.markdown(f"""
+<div class='sec-header' style='--sc:#818CF8'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(129,140,248,0.20),rgba(129,140,248,0.06))'>🧭</div>
+    <div class='sec-text'>
+        <div class='sec-title'>Desempeño Sostenido por Supervisor</div>
+        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil CONSOLIDADO de matrículas de {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"} — no un mes bueno aislado, sino el trimestre completo.</div>
+    </div>
+    <span class='sec-tag' style='background:#818CF8'>Trimestral</span>
+</div>
+""", unsafe_allow_html=True)
+if _filas_evolucion:
+    _df_consolidado = pd.DataFrame([
+        {"SUPERVISOR": f["SUPERVISOR"], "CUARTIL": f["CUARTIL_MAT_CONSOLIDADO"]} for f in _filas_evolucion
+    ])
+    st.plotly_chart(_fig_cuartil_supervisor(_df_consolidado), width="stretch", config={"displayModeBar": False})
+else:
+    st.caption("Sin histórico suficiente para esta gráfica.")
+
+# ─────────────────────────────────────────────
 # CLASIFICACIÓN DE ASESORES
 # ─────────────────────────────────────────────
 st.markdown(f"""
@@ -958,26 +1101,3 @@ if len(_con_insumo):
 else:
     st.caption("Sin insumo (leads) suficiente este mes para calcular conversión — revisa que la hoja de Leads tenga la Cedula de estos asesores.")
 
-# ─────────────────────────────────────────────
-# EVOLUCIÓN HISTÓRICA
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_ACCENT}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Evolución Histórica</div>
-        <div class='sec-desc'>Cuartil de cada asesor mes a mes — permite ver si sube, baja o se mantiene.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_ACCENT}'>Heatmap</span>
-</div>
-""", unsafe_allow_html=True)
-
-_historico = _historico_cuartiles(mat_full, insc_full, metas_full, leads_full, meses_disponibles)
-if len(_historico):
-    _n_asesores_hist = _historico["ASESOR"].nunique()
-    _top_n_hist = 30
-    st.plotly_chart(_fig_evolucion(_historico, meses_disponibles, top_n=_top_n_hist), width="stretch", config={"displayModeBar": False})
-    if _n_asesores_hist > _top_n_hist:
-        st.caption(f"Mostrando los {_top_n_hist} asesores con más meses de historial, de {_n_asesores_hist} en total.")
-else:
-    st.caption("Sin histórico suficiente para graficar la evolución.")
