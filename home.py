@@ -486,28 +486,41 @@ with rail_col:
                 st.session_state.home_mod = key
                 st.rerun()
 
-with focus_col:
-    sel = st.session_state.home_mod
+@st.fragment(run_every=3)
+def _panel_indicador(sel):
+    """Panel de foco. La portada se pinta al instante (indicador en '···') y este
+    fragmento descarga la base en segundo plano, sin bloquear el resto de la
+    portada — se puede navegar antes de que cargue. La cifra viene de
+    _datos.cifra_modulo (cacheada; el botón 🔄 la refresca)."""
     m = _MODULOS[sel]
-    with st.spinner("Cargando indicador…"):
+    _vistos = st.session_state.setdefault("_ind_vistos", set())
+    if sel not in _vistos:          # 1er ciclo: no se descarga nada, portada instantánea
+        _vistos.add(sel)
+        r = {"cifra": "···", "sub": "calculando indicador…", "serie": []}
+    else:                           # ciclos siguientes (poll de 3 s): cifra cacheada
         r = _datos.cifra_modulo(sel)
     bars = "".join(f"<span style='height:{h}%'></span>" for h in _barras(r.get("serie")))
     feats = "".join(f"<span class='hm-feat'>{f}</span>" for f in m["feats"])
+    st.markdown(
+        f"<div class='hm-focus' style='--ac1:{m['ac1']};--icobg:{m['icobg']}'>"
+        "<div class='hm-focus-glow'></div>"
+        "<div class='hm-tag'>Indicador principal</div>"
+        f"<div class='hm-name'>{m['title']}</div>"
+        f"<p class='hm-desc'>{m['desc']}</p>"
+        f"<div class='hm-big'>{r.get('cifra', '—')}</div>"
+        f"<div class='hm-bigk'>{r.get('sub', '')}</div>"
+        f"<div class='hm-chart'>{bars}</div>"
+        f"<div class='hm-feats'>{feats}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
+
+with focus_col:
+    sel = st.session_state.home_mod
+    m = _MODULOS[sel]
     with st.container(key="hm_focus_wrap"):
-        st.markdown(
-            f"<div class='hm-focus' style='--ac1:{m['ac1']};--icobg:{m['icobg']}'>"
-            "<div class='hm-focus-glow'></div>"
-            "<div class='hm-tag'>Indicador principal</div>"
-            f"<div class='hm-name'>{m['title']}</div>"
-            f"<p class='hm-desc'>{m['desc']}</p>"
-            f"<div class='hm-big'>{r.get('cifra', '—')}</div>"
-            f"<div class='hm-bigk'>{r.get('sub', '')}</div>"
-            f"<div class='hm-chart'>{bars}</div>"
-            f"<div class='hm-feats'>{feats}</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        _panel_indicador(sel)
     with st.container(key="hm_cta"):
         st.markdown(
             "<style>.st-key-hm_cta div[data-testid='stButton']>button{"

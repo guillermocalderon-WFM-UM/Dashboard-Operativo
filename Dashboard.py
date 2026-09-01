@@ -41,9 +41,10 @@ def _portada_acceso(cuerpo_html: str) -> None:
     partes = _APP_NOMBRE.split()
     n1 = " ".join(partes[:-1]) if len(partes) > 1 else _APP_NOMBRE
     n2 = partes[-1] if len(partes) > 1 else ""
+    _sys = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
     st.markdown(f"""
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&display=swap');
       [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"],
       [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], #MainMenu {{ display:none !important; }}
       [data-testid="stAppViewContainer"], .stApp {{
@@ -64,10 +65,10 @@ def _portada_acceso(cuerpo_html: str) -> None:
       .lgn-grad {{ background:linear-gradient(92deg,#38bdf8,#818cf8 42%,#34d399 78%,#38bdf8);
         -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }}
       .lgn-rule {{ height:1px; background:linear-gradient(90deg,rgba(255,255,255,.22),transparent); margin:24px 0 20px; }}
-      .lgn-copy {{ font-family:'Inter',sans-serif; font-size:13.5px; color:rgba(233,241,236,.62);
+      .lgn-copy {{ font-family:{_sys}; font-size:13.5px; color:rgba(233,241,236,.62);
         max-width:48ch; line-height:1.75; }}
       .lgn-copy b {{ color:#fff; }}
-      .lgn-hint {{ font-family:'Inter',sans-serif; font-size:11px; color:rgba(233,241,236,.38); margin-top:12px; }}
+      .lgn-hint {{ font-family:{_sys}; font-size:11px; color:rgba(233,241,236,.38); margin-top:12px; }}
       .stButton > button {{ font-family:'Space Grotesk',sans-serif !important; font-weight:700 !important;
         font-size:14px !important; color:#fff !important; background:rgba(255,255,255,.03) !important;
         border:1px solid rgba(255,255,255,.28) !important; border-radius:12px !important;
