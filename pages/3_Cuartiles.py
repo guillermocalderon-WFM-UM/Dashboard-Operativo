@@ -1139,6 +1139,10 @@ with _uc2:
 # ─────────────────────────────────────────────
 _N_MESES_EVOLUCION = 6
 _filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(tuple(meses_disponibles[-_N_MESES_EVOLUCION:]))
+if sup_sel != "Todos":
+    _filas_evolucion = [f for f in _filas_evolucion if f["SUPERVISOR"] == sup_sel]
+if exp_sel != "Todos":
+    _filas_evolucion = [f for f in _filas_evolucion if f["ASESOR"] == exp_sel]
 _n_ev = len(_meses_evolucion)
 
 st.markdown(f"""
