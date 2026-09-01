@@ -6,3 +6,8 @@ secondaryBackgroundColor = "#0C2B1D"
 textColor = "#E3E8F7"
 dataframeHeaderBackgroundColor = "#0F2318"
 dataframeBorderColor = "rgba(255,255,255,0.10)"
+
+[client]
+# Los usuarios no ven el traceback (solo un aviso genérico); el detalle queda en los logs.
+showErrorDetails = "none"
+toolbarMode = "minimal"
