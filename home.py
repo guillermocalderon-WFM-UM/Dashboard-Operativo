@@ -162,6 +162,80 @@ st.markdown(f"""
     @keyframes sbcBar {{ 0% {{ background-position:0% 0%; }} 100% {{ background-position:200% 0%; }} }}
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
     @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(14px); }} to {{ opacity:1; transform:translateY(0); }} }}
+    @keyframes ring {{ 0% {{ transform:scale(.85); opacity:.55; }} 100% {{ transform:scale(1.7); opacity:0; }} }}
+    @keyframes shimmer {{ 0% {{ background-position:-200% 0; }} 100% {{ background-position:200% 0; }} }}
+    @keyframes auroraMove {{
+        0%   {{ transform:translate(0,0) scale(1); }}
+        33%  {{ transform:translate(36px,-26px) scale(1.12); }}
+        66%  {{ transform:translate(-26px,22px) scale(0.93); }}
+        100% {{ transform:translate(0,0) scale(1); }} }}
+    @keyframes nticker {{ 0% {{ transform:translateX(0); }} 100% {{ transform:translateX(-50%); }} }}
+    @media (prefers-reduced-motion:reduce) {{
+        .hero-aurora, .nticker-inner, .hero-title .grad {{ animation:none !important; }} }}
+
+    /* ══════════ HERO ══════════ */
+    .hero {{ position:relative;border-radius:26px;overflow:hidden;padding:32px 48px 28px;text-align:center;margin-bottom:16px;
+        background:linear-gradient(135deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
+        border:1px solid rgba(255,255,255,0.11);
+        box-shadow:0 28px 80px -30px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.10);
+        animation:fadeUp 0.6s ease both; }}
+    .hero-aurora {{ position:absolute;border-radius:50%;filter:blur(54px);pointer-events:none;z-index:0; }}
+    .ha1 {{ width:400px;height:400px;background:radial-gradient(circle,rgba(14,165,233,0.42),transparent 65%);top:-160px;left:-110px;animation:auroraMove 16s ease-in-out infinite; }}
+    .ha2 {{ width:360px;height:360px;background:radial-gradient(circle,rgba(129,140,248,0.40),transparent 65%);bottom:-170px;right:-80px;animation:auroraMove 20s ease-in-out infinite reverse; }}
+    .ha3 {{ width:250px;height:250px;background:radial-gradient(circle,rgba(52,211,153,0.28),transparent 65%);top:22%;right:14%;animation:auroraMove 24s ease-in-out infinite; }}
+    .hero-inner {{ position:relative;z-index:1; }}
+    .hero-badge {{ display:inline-flex;align-items:center;gap:9px;background:rgba(52,211,153,0.08);
+        border:1px solid rgba(52,211,153,0.28);border-radius:99px;padding:7px 20px;margin-bottom:22px;
+        font-size:10px;font-weight:700;color:rgba(255,255,255,0.80);letter-spacing:0.14em;text-transform:uppercase; }}
+    .hero-badge-dot {{ position:relative;width:8px;height:8px; }}
+    .hero-badge-dot::after {{ content:'';position:absolute;inset:0;border-radius:50%;background:#34D399; }}
+    .hero-badge-dot::before {{ content:'';position:absolute;inset:0;border-radius:50%;border:2px solid #34D399;animation:ring 1.8s ease-out infinite; }}
+    .hero-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:42px;font-weight:800;color:white;
+        margin:0 0 12px;letter-spacing:-1.6px;line-height:1.04; }}
+    .hero-title .grad {{ background:linear-gradient(90deg,#38BDF8 0%,#818CF8 35%,#34D399 70%,#38BDF8 100%);
+        background-size:220% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;animation:shimmer 5s linear infinite; }}
+    .hero-sub {{ font-size:14.5px;color:rgba(255,255,255,0.60);max-width:560px;margin:0 auto;line-height:1.66; }}
+    .hero-divider {{ width:52px;height:1.5px;margin:20px auto 18px;border-radius:2px;
+        background:linear-gradient(90deg,transparent,rgba(56,189,248,0.55),rgba(129,140,248,0.55),transparent); }}
+    .hero-cards {{ display:flex;justify-content:center;gap:10px;flex-wrap:wrap; }}
+    .hcard {{ display:flex;align-items:center;gap:12px;min-width:150px;background:rgba(255,255,255,0.05);
+        border:1px solid rgba(255,255,255,0.09);border-top:2px solid var(--hc,rgba(56,189,248,0.50));
+        border-radius:15px;padding:13px 18px;
+        box-shadow:0 8px 26px -12px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.06);
+        transition:transform .22s cubic-bezier(.2,.8,.2,1),background .22s ease; }}
+    .hcard:hover {{ transform:translateY(-4px);background:rgba(255,255,255,0.09); }}
+    .hcard-ico {{ width:42px;height:42px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+        font-size:19px;background:var(--hc-bg,rgba(56,189,248,0.12));border:1px solid var(--hc,rgba(56,189,248,0.22)); }}
+    .hcard-txt {{ text-align:left; }}
+    .hcard-lbl {{ font-size:8.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+        color:var(--hc,rgba(56,189,248,0.80));margin-bottom:4px;display:block; }}
+    .hcard-val {{ font-size:14.5px;font-weight:800;color:white;line-height:1;display:block; }}
+    .hcard-val .dot {{ display:inline-block;width:7px;height:7px;border-radius:50%;background:#34D399;
+        box-shadow:0 0 10px #34D399;margin-right:6px;animation:sbcPulse 1.8s ease-in-out infinite; }}
+
+    /* ══ TICKER ══ */
+    .nticker-shell {{ display:flex;align-items:stretch;overflow:hidden;border-radius:14px;
+        background:rgba(245,158,11,0.04);border:1px solid rgba(245,158,11,0.22);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,0.05);margin:0 0 6px; }}
+    .nticker-label {{ flex-shrink:0;display:flex;align-items:center;gap:8px;padding:11px 17px;
+        font-size:8.5px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#F59E0B;
+        background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(245,158,11,0.08));
+        border-right:1px solid rgba(245,158,11,0.22); }}
+    .nticker-dot {{ width:7px;height:7px;border-radius:50%;background:#F59E0B;box-shadow:0 0 8px #F59E0B;
+        animation:sbcPulse 1.8s ease-in-out infinite;flex-shrink:0; }}
+    .nticker-track {{ overflow:hidden;flex:1;
+        mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%);
+        -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%); }}
+    .nticker-inner {{ display:flex;width:max-content;animation:nticker 40s linear infinite;padding:11px 0; }}
+    .nticker-inner:hover {{ animation-play-state:paused; }}
+    .nticker-item {{ display:flex;align-items:center;gap:10px;padding:0 44px;white-space:nowrap;
+        font-size:12.5px;color:rgba(255,255,255,0.66);font-weight:500; }}
+    .nticker-sep {{ color:rgba(245,158,11,0.35);font-size:17px;margin-left:6px; }}
+    .ntag {{ font-size:8px;font-weight:800;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:0.09em;flex-shrink:0; }}
+    .ntag-u {{ background:rgba(14,165,233,0.18);color:#38BDF8;border:1px solid rgba(14,165,233,0.28); }}
+    .ntag-n {{ background:rgba(52,211,153,0.18);color:#34D399;border:1px solid rgba(52,211,153,0.28); }}
+    .ntag-p {{ background:rgba(245,158,11,0.18);color:#FCD34D;border:1px solid rgba(245,158,11,0.28); }}
 
     /* ══ BRAND CARD (sidebar) ══ */
     .sbc {{ position:relative;border-radius:20px;overflow:hidden;margin:-18px 0 20px;padding:20px 18px 18px;
@@ -213,7 +287,7 @@ st.markdown(f"""
     .sbf-spark {{ font-size:10px; }}
 
     /* ══════════ PORTADA — foco + tira lateral ══════════ */
-    .hm-eyebrow {{ display:flex;align-items:center;gap:11px;margin:2px 0 20px;
+    .hm-eyebrow {{ display:flex;align-items:center;gap:11px;margin:26px 0 18px;
         font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.42); }}
     .hm-eyebrow::before {{ content:'';width:24px;height:2px;border-radius:2px;background:linear-gradient(90deg,#38BDF8,#818CF8); }}
     .hm-eyebrow::after {{ content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.12),transparent); }}
@@ -324,6 +398,58 @@ def _barras(serie, n=18):
     tope = max(serie)
     return [max(6, round(v / tope * 100)) for v in serie]
 
+
+# ── HERO ─────────────────────────────────
+st.markdown("""
+<div class='hero'>
+    <div class='hero-aurora ha1'></div>
+    <div class='hero-aurora ha2'></div>
+    <div class='hero-aurora ha3'></div>
+    <div class='hero-inner'>
+        <div class='hero-badge'><span class='hero-badge-dot'></span>Centro de Control · Uniminuto · 2026</div>
+        <div class='hero-title'>Dashboard&nbsp;<span class='grad'>Operativo</span></div>
+        <div class='hero-sub'>Plataforma de análisis del proceso comercial y académico.
+        Inscripciones, matrículas, cuartiles y real&nbsp;time desde una sola base consolidada.</div>
+        <div class='hero-divider'></div>
+        <div class='hero-cards'>
+            <div class='hcard' style='--hc:rgba(52,211,153,0.70);--hc-bg:rgba(52,211,153,0.13)'>
+                <div class='hcard-ico'>⚡</div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Estado del sistema</span>
+                <span class='hcard-val'><span class='dot'></span>En línea</span></div>
+            </div>
+            <div class='hcard' style='--hc:rgba(56,189,248,0.70);--hc-bg:rgba(56,189,248,0.13)'>
+                <div class='hcard-ico'>◈</div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Seguimiento</span>
+                <span class='hcard-val'>Por asesor</span></div>
+            </div>
+            <div class='hcard' style='--hc:rgba(129,140,248,0.70);--hc-bg:rgba(129,140,248,0.13)'>
+                <div class='hcard-ico'>◷</div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Período activo</span>
+                <span class='hcard-val'>2026</span></div>
+            </div>
+            <div class='hcard' style='--hc:rgba(245,158,11,0.70);--hc-bg:rgba(245,158,11,0.13)'>
+                <div class='hcard-ico'>✦</div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Alianza</span>
+                <span class='hcard-val'>Uniminuto</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+_TICK = (
+    "<div class='nticker-item'><span class='ntag ntag-n'>Nuevo</span>"
+    "Real time ya disponible — llamadas en vivo y cierre del día vencido<span class='nticker-sep'>·</span></div>"
+    "<div class='nticker-item'><span class='ntag ntag-u'>Base 2026</span>"
+    "Inscripciones, Matrículas y Cuartiles sobre base mensual consolidada<span class='nticker-sep'>·</span></div>"
+    "<div class='nticker-item'><span class='ntag ntag-p'>Cuartiles</span>"
+    "Histórico de 6 meses y umbrales real vs. propuesto<span class='nticker-sep'>·</span></div>"
+)
+st.markdown(
+    "<div class='nticker-shell'><div class='nticker-label'><span class='nticker-dot'></span>En vivo</div>"
+    "<div class='nticker-track'><div class='nticker-inner'>" + _TICK + _TICK + "</div></div></div>",
+    unsafe_allow_html=True,
+)
 
 # ── PORTADA ──────────────────────────────
 st.markdown("<div class='hm-eyebrow'>Módulos disponibles</div>", unsafe_allow_html=True)
