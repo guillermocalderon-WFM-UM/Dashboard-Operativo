@@ -421,7 +421,7 @@ st.markdown("""
     <div class='hero-aurora ha3'></div>
     <div class='hero-inner'>
         <div class='hero-badge'><span class='hero-badge-dot'></span>Centro de Control · Uniminuto · 2026</div>
-        <div class='hero-title'>Dashboard&nbsp;<span class='grad'>Operativo</span></div>
+        <div class='hero-title'>Dashboard<br><span class='grad'>Operativo</span></div>
         <div class='hero-sub'>Plataforma de análisis del proceso comercial y académico.
         Inscripciones, matrículas, cuartiles y real&nbsp;time desde una sola base consolidada.</div>
         <div class='hero-divider'></div>
