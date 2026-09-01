@@ -669,7 +669,9 @@ with st.sidebar:
     supervisores = ["Todos"] + sorted(s for s in tabla_mes_full["SUPERVISOR"].unique().tolist() if s and s != "Sin asignar")
     sup_sel = st.selectbox("Supervisor", supervisores)
 
-    expertos = ["Todos"] + sorted(e for e in tabla_mes_full["ASESOR"].unique().tolist() if e and e != "Sin asignar")
+    # Los expertos disponibles dependen del supervisor elegido.
+    _base_exp = tabla_mes_full if sup_sel == "Todos" else tabla_mes_full[tabla_mes_full["SUPERVISOR"] == sup_sel]
+    expertos = ["Todos"] + sorted(e for e in _base_exp["ASESOR"].unique().tolist() if e and e != "Sin asignar")
     exp_sel = st.selectbox("Experto", expertos)
 
     st.markdown("""

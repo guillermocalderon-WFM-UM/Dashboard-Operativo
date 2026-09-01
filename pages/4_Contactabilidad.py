@@ -425,23 +425,94 @@ _fh.add_scatter(x=[f"{h}:00" for h in _ef_hora.index], y=list(_ef_hora.values), 
 _fh.update_layout(**_base_layout(300), legend=dict(orientation="h", y=1.05, x=0, font=dict(size=10)), xaxis=_ax, yaxis=_ax)
 st.plotly_chart(_fh, width="stretch", config={"displayModeBar": False})
 
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown("<div class='chart-hdr' style='--cc:#818CF8'><span class='ch-icon'>🧩</span><div><div class='ch-title'>Disposición de la gestión</div><div class='ch-sub'>Distribución de llamadas por resultado</div></div></div>", unsafe_allow_html=True)
-    _dc = _bg["_DISPOSICION"].value_counts()
-    _dc = _dc[[d for d in _DISPOS if d in _dc.index]] if len(_dc) else _dc
-    _fd = go.Figure(go.Bar(x=list(_dc.values), y=list(_dc.index), orientation="h",
-                           marker=dict(color=[_DISPOS_COLOR.get(k, "#94A3B8") for k in _dc.index]),
-                           text=list(_dc.values), textposition="outside", cliponaxis=False))
-    _fd.update_layout(**_base_layout(320), xaxis=_ax, yaxis=dict(**_ax, autorange="reversed"))
+# ── Disposición de la gestión — el análisis clave ──
+st.markdown("<div class='chart-hdr' style='--cc:#818CF8'><span class='ch-icon'>🧩</span><div><div class='ch-title'>Disposición de la gestión</div><div class='ch-sub'>Cómo terminó cada llamada gestionada — agrupado por tipo de resultado</div></div></div>", unsafe_allow_html=True)
+
+# Cada disposición pertenece a un grupo de resultado (el color lo comunica).
+_GRUPO_DISP = {
+    "Efectivo Interesado": "Contacto efectivo", "Efectivo No Interesado": "Contacto efectivo",
+    "No cumple perfil": "Contacto efectivo",
+    "Contacto con Tercero": "Contacto parcial", "Se corta llamada": "Contacto parcial",
+    "No Efectivo": "Contacto parcial", "Prueba": "Contacto parcial",
+    "No Contacto": "Sin contacto",
+}
+_GRUPO_ORDEN = ["Contacto efectivo", "Contacto parcial", "Sin contacto"]
+_GRUPO_COLOR = {"Contacto efectivo": "#10B981", "Contacto parcial": "#F59E0B", "Sin contacto": "#EF4444"}
+_DISP_TONO = {  # variación del color del grupo por disposición, para diferenciarlas
+    "Efectivo Interesado": "#10B981", "Efectivo No Interesado": "#34D399", "No cumple perfil": "#6EE7B7",
+    "Contacto con Tercero": "#F59E0B", "Se corta llamada": "#FBBF24", "No Efectivo": "#FCD34D", "Prueba": "#FDE68A",
+    "No Contacto": "#EF4444",
+}
+
+_dc = _bg["_DISPOSICION"].value_counts()
+_dc = _dc[[d for d in _DISPOS if d in _dc.index]] if len(_dc) else _dc
+_tot_disp = int(_dc.sum())
+
+if _tot_disp:
+    _g = {k: 0 for k in _GRUPO_ORDEN}
+    for k, v in _dc.items():
+        _g[_GRUPO_DISP.get(k, "Contacto parcial")] += int(v)
+
+    # 1) Barra resumen 100 % por grupo de resultado
+    _fr = go.Figure()
+    for grp in _GRUPO_ORDEN:
+        if not _g[grp]:
+            continue
+        pct = _g[grp] / _tot_disp * 100
+        _fr.add_bar(y=[""], x=[_g[grp]], orientation="h", name=grp, marker_color=_GRUPO_COLOR[grp],
+                    text=[f"{grp} · {pct:.0f}%"], textposition="inside", insidetextanchor="middle",
+                    textfont=dict(size=12, color="white", family="Inter"),
+                    hovertemplate=f"{grp}: %{{x:,}} llamadas<extra></extra>")
+    _lr = _base_layout(78)
+    _lr["margin"] = dict(l=0, r=0, t=4, b=4)
+    _fr.update_layout(**_lr, barmode="stack", showlegend=False, bargap=0.02,
+                      xaxis=dict(visible=False), yaxis=dict(visible=False))
+    st.plotly_chart(_fr, width="stretch", config={"displayModeBar": False})
+
+    # 2) Detalle por disposición, ordenado por volumen y coloreado por grupo
+    _dd = _dc.sort_values(ascending=True)
+    _txt = [f"  {int(v):,} · {v / _tot_disp * 100:.1f}%".replace(",", ".") for v in _dd.values]
+    _fd = go.Figure(go.Bar(
+        x=list(_dd.values), y=list(_dd.index), orientation="h",
+        marker=dict(color=[_DISP_TONO.get(k, "#94A3B8") for k in _dd.index],
+                    line=dict(width=0)),
+        text=_txt, textposition="outside", cliponaxis=False,
+        textfont=dict(size=11.5, color="rgba(255,255,255,0.92)", family="Inter"),
+        hovertemplate="%{y}: %{x:,} llamadas<extra></extra>",
+    ))
+    _ld = _base_layout(max(300, 46 * len(_dd)))
+    _ld["margin"] = dict(l=10, r=120, t=8, b=8)
+    _fd.update_layout(**_ld, bargap=0.4,
+                      xaxis=dict(visible=False),
+                      yaxis=dict(tickfont=dict(size=12, color="rgba(255,255,255,0.85)", family="Inter"), automargin=True))
     st.plotly_chart(_fd, width="stretch", config={"displayModeBar": False})
-with c2:
-    st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>📣</span><div><div class='ch-title'>Por campaña</div><div class='ch-sub'>Top 10 por llamadas gestionadas</div></div></div>", unsafe_allow_html=True)
-    _cc = _bg.groupby("Campaña").size().sort_values(ascending=False).head(10).sort_values()
-    _fc = go.Figure(go.Bar(x=list(_cc.values), y=list(_cc.index), orientation="h", marker_color="#34D399",
-                           text=list(_cc.values), textposition="outside", cliponaxis=False))
-    _fc.update_layout(**_base_layout(320), xaxis=_ax, yaxis=_ax)
-    st.plotly_chart(_fc, width="stretch", config={"displayModeBar": False})
+else:
+    st.caption("Sin llamadas gestionadas para el filtro actual.")
+
+# ── Peso de cada campaña — treemap (participación por área) ──
+st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>📣</span><div><div class='ch-title'>Peso de cada campaña</div><div class='ch-sub'>Participación de cada origen en las llamadas gestionadas</div></div></div>", unsafe_allow_html=True)
+_cc = _bg.groupby("Campaña").size().sort_values(ascending=False)
+_cc = _cc[_cc > 0]
+if len(_cc):
+    _topn = _cc.head(12)
+    _resto = int(_cc.iloc[12:].sum())
+    _labels = [str(x) for x in _topn.index] + (["otras"] if _resto else [])
+    _vals = [int(v) for v in _topn.values] + ([_resto] if _resto else [])
+    _ft = go.Figure(go.Treemap(
+        labels=_labels, parents=[""] * len(_labels), values=_vals, branchvalues="total",
+        marker=dict(colors=_vals,
+                    colorscale=[[0, "#0B3B2E"], [0.45, "#0F9D6B"], [1, "#6EE7B7"]],
+                    line=dict(width=2, color="#071712"), pad=dict(t=3, l=3, r=3, b=3)),
+        textinfo="label+value+percent root",
+        textfont=dict(family="Inter", size=13, color="white"),
+        hovertemplate="<b>%{label}</b><br>%{value:,} llamadas · %{percentRoot}<extra></extra>",
+    ))
+    _lt = _base_layout(400)
+    _lt["margin"] = dict(l=4, r=4, t=4, b=4)
+    _ft.update_layout(**_lt)
+    st.plotly_chart(_ft, width="stretch", config={"displayModeBar": False})
+else:
+    st.caption("Sin campañas para el filtro actual.")
 
 # ─────────────────────────────────────────────
 # TABLA 1 — Gestión por Asesor (réplica del pivot "Disposición Agrupada")
