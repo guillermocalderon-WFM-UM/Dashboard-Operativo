@@ -1,24 +1,13 @@
 import base64
 import calendar
 import io
-import urllib.parse
 from datetime import date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Hojas de Google Sheets (compartidas como "Cualquiera con el enlace: Lector").
-# Base y Metas viven en archivos de Sheets separados.
-_SHEET_ID = "14DOLvF_d-qhd-VBE62M6hnfqtOH3EYcggjBLgwHiC8w"
-_SHEET_ID_METAS = "1byJ5Sw_P_xKew5xMbWz9KQSTQfc_J-Fm"
-
-
-def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(nombre_hoja)}"
-    )
+import _datos
 
 # ─────────────────────────────────────────────
 # COLORES (mismo esquema que Dashboard WFM, primario en verde esmeralda)
@@ -75,18 +64,8 @@ def df_descarga(df, nombre_archivo, **kwargs):
 # ─────────────────────────────────────────────
 # CARGA DE DATOS
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_base() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID, "Base"), encoding="utf-8")
-    df.columns = df.columns.str.strip()
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_metas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_METAS, "Consolidado"), encoding="utf-8")
-    df.columns = df.columns.str.strip()
-    return df
+_cargar_base = _datos.inscripciones
+_cargar_metas = _datos.metas
 
 
 # Festivos oficiales de Colombia 2026 (incluye Ley Emiliani: se trasladan al lunes siguiente).
@@ -581,6 +560,9 @@ with st.sidebar:
     mes_valores = [m for m in _MES_ORDEN if m in mes_presentes] + sorted(m for m in mes_presentes if m not in _MES_ORDEN)
     mes_sel = st.selectbox("Mes", ["Todos"] + mes_valores)
 
+    coordinadores = ["Todos"] + sorted(base_full["COORDINADOR"].dropna().unique().tolist())
+    coord_sel = st.selectbox("Coordinador", coordinadores)
+
     supervisores = ["Todos"] + sorted(_base_con_sup["_SUPERVISOR"].unique().tolist())
     sup_sel = st.selectbox("Supervisor", supervisores)
 
@@ -608,6 +590,8 @@ with st.sidebar:
         <div class='sbf-credit'><span class='sbf-spark'>⚡</span>Desarrollado por Workforce Management</div>
     </div>
     """, unsafe_allow_html=True)
+
+_datos.boton_actualizar()
 
 # ─────────────────────────────────────────────
 # CSS
@@ -930,11 +914,15 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 b = _base_con_sup.copy()
 _fecha_insc = pd.to_datetime(b["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
-mask = (_fecha_insc >= fecha_ini) & (_fecha_insc <= fecha_fin)
+# Se ocultan las inscripciones sin supervisor asignado: así los KPIs y todo el módulo
+# cuadran con la tabla "Avance vs Meta" (que ya agrupa solo por supervisor).
+mask = (_fecha_insc >= fecha_ini) & (_fecha_insc <= fecha_fin) & b["SUPERVISOR"].notna()
 if cohorte_sel != "Todos":
     mask &= b["COHORTE"] == cohorte_sel
 if mes_sel != "Todos":
     mask &= b["MES"] == mes_sel
+if coord_sel != "Todos":
+    mask &= b["COORDINADOR"] == coord_sel
 if sup_sel != "Todos":
     mask &= b["_SUPERVISOR"] == sup_sel
 if nivel_sel != "Todos":
@@ -950,6 +938,8 @@ if cohorte_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COHORTE"] == cohorte_sel]
 if mes_sel != "Todos":
     _base_avance = _base_avance[_base_avance["MES"] == mes_sel]
+if coord_sel != "Todos":
+    _base_avance = _base_avance[_base_avance["COORDINADOR"] == coord_sel]
 _fecha_insc_avance = pd.to_datetime(_base_avance["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
 _base_avance = _base_avance[(_fecha_insc_avance >= fecha_ini) & (_fecha_insc_avance <= fecha_fin)]
 tabla, total_general = _tabla_avance(_base_avance, metas_full, fecha_ini, fecha_fin)
@@ -963,7 +953,6 @@ _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
 _cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-_leads_pg = st.Page("pages/5_Leads.py", title="Leads", icon="🎯")
 
 # ─────────────────────────────────────────────
 # ENCABEZADO
@@ -979,7 +968,7 @@ with st.container(key="hdrbanner"):
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, nb6, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.1, 1.0], vertical_alignment="center")
+    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
     with nb1:
         if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
             st.switch_page(_home_pg)
@@ -994,9 +983,6 @@ with st.container(key="hdrbanner"):
     with nb5:
         if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
-    with nb6:
-        if st.button("🎯 Leads", key="hdr_leads", width="stretch"):
-            st.switch_page(_leads_pg)
 
 # ─────────────────────────────────────────────
 # KPIs

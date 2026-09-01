@@ -1,25 +1,16 @@
 import base64
 import calendar
 import io
-import urllib.parse
 from datetime import date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Hojas de Google Sheets (compartidas como "Cualquiera con el enlace: Lector").
-# Base y Metas viven en archivos de Sheets separados (Metas es el mismo archivo que usa Inscripciones).
-_SHEET_ID = "1yh02o6obFpiMHUenyaBX6ZKmTivdSrY5_usVisb0I74"
-_SHEET_ID_METAS = "1byJ5Sw_P_xKew5xMbWz9KQSTQfc_J-Fm"
+import _datos
 
-
-def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(nombre_hoja)}"
-    )
-
+# La carga de datos (8 archivos mensuales + directorio maestro de expertos) vive en _datos.py,
+# compartida con el resto de módulos. Ver ese archivo para el detalle de la resolución.
 
 # ─────────────────────────────────────────────
 # COLORES (mismo esquema que Inscripciones / Dashboard WFM)
@@ -35,12 +26,6 @@ _MES_ORDEN = [
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
 _MES_A_NUM = {mes: i + 1 for i, mes in enumerate(_MES_ORDEN)}
-
-_COLS_MONEY = [
-    "Ingreso bruto", "Beca", "Descuento", "Vr Alivio", "Desc. Pronto pago",
-    "Patrocinio", "Recargo", "Subsidio", "Crédito convenio2", "Crédito icetex",
-    "Ingreso neto",
-]
 
 
 # ─────────────────────────────────────────────
@@ -68,54 +53,11 @@ def df_descarga(df, nombre_archivo, **kwargs):
     )
 
 
-def _money_to_float(s: pd.Series) -> pd.Series:
-    """Convierte '$  1.234.567' / '-$  928.590' / '$  -' a float (miles con punto, sin decimales)."""
-    cleaned = (
-        s.astype(str).str.strip()
-        .str.replace("$", "", regex=False)
-        .str.replace("\xa0", "", regex=False)
-        .str.replace(" ", "", regex=False)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-    )
-    return pd.to_numeric(cleaned, errors="coerce").fillna(0.0)
-
-
-def _fmt_cop(v: float) -> str:
-    return f"$ {v:,.0f}".replace(",", ".")
-
-
 # ─────────────────────────────────────────────
-# CARGA DE DATOS
+# CARGA DE DATOS  (compartida — ver _datos.py)
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_base() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID, "Base"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    # La hoja trae "Cedula" vacía en las filas de relleno del rango — son las únicas filas válidas.
-    df = df[df["Cedula"].notna()].copy()
-    for c in _COLS_MONEY:
-        if c in df.columns:
-            df[c] = _money_to_float(df[c])
-    df["NOMBRE_COMPLETO"] = (
-        df["Nombres"].fillna("").str.strip() + " " + df["Apellidos"].fillna("").str.strip()
-    ).str.strip()
-    df["_SUPERVISOR"] = df["Supervisor.1"].fillna("Sin asignar")
-    df["_ASESOR"] = df["Asesor.1"].fillna(df["Asesor"]).fillna("Sin asignar")
-    # "Coordinador" trae inconsistencias de mayúscula inicial en la Base (ej. "luis Andres..."
-    # vs "Luis Andres...") que duplican a la misma persona al agrupar.
-    df["_COORDINADOR"] = (
-        df["Coordinador"].fillna("Sin asignar").str.strip()
-        .apply(lambda s: s[0].upper() + s[1:] if s else s)
-    )
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_metas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_METAS, "Consolidado"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    return df
+_cargar_base = _datos.matriculas
+_cargar_metas = _datos.metas
 
 
 # Festivos oficiales de Colombia 2026 (incluye Ley Emiliani: se trasladan al lunes siguiente).
@@ -333,20 +275,32 @@ def _fig_nivel(b: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _fig_financiacion(b: pd.DataFrame) -> go.Figure:
-    counts = b["Financiación"].value_counts()
-    colores = {"CONTADO": COLOR_ACCENT, "CREDITO": "#818CF8", "PENDIENTE": COLOR_WARNING}
-    fig = go.Figure(go.Pie(
-        labels=list(counts.index), values=list(counts.values), hole=0.58,
-        marker=dict(colors=[colores.get(k, "#94A3B8") for k in counts.index],
-                    line=dict(color="rgba(8,6,15,0.6)", width=2)),
-        textinfo="label+percent", textfont=dict(size=11, color="white", family="Inter"),
+def _cohorte_key(c: str):
+    """Ordena las cohortes '<Mes>-<Año>' cronológicamente."""
+    partes = str(c).split("-")
+    mes = _MES_A_NUM.get(partes[0].strip(), 99)
+    anio = int("".join(ch for ch in partes[-1] if ch.isdigit()) or 0)
+    return (anio, mes)
+
+
+def _fig_cohorte(b: pd.DataFrame) -> go.Figure:
+    counts = b["COHORTE"].value_counts()
+    counts = counts.reindex(sorted(counts.index, key=_cohorte_key))
+    fig = go.Figure(go.Bar(
+        x=list(counts.index), y=list(counts.values),
+        marker=dict(color="#818CF8"),
+        text=list(counts.values), textposition="outside", cliponaxis=False,
+        textfont=dict(size=11, color="#CBD3F2", family="Inter"),
     ))
     fig.update_layout(
-        height=300, margin=dict(l=10, r=10, t=10, b=10),
+        height=340, margin=dict(l=40, r=10, t=30, b=10),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
         font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
+        showlegend=False,
+        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
+                   automargin=True),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="Matrículas",
+                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
     )
     return fig
 
@@ -521,14 +475,7 @@ except FileNotFoundError:
 base_full = _cargar_base()
 metas_full = _cargar_metas()
 hoy = date.today()
-# _FECHA = fecha operativa (AÑO/MES/DÍA de la propia Base), no "Fecha Contabilización":
-# esta última es la fecha financiera original y puede ser de años atrás en reingresos
-# (alguien que pagó hace tiempo y se matricula operativamente este mes), lo que los
-# excluiría del rango Desde/Hasta y de los gráficos de tendencia/día si se usara esa.
-base_full["_FECHA"] = pd.to_datetime(
-    dict(year=base_full["AÑO"], month=base_full["MES"].map(_MES_A_NUM), day=base_full["DÍA"]),
-    errors="coerce",
-)
+# _FECHA, AÑO, MES y DÍA se derivan de "Fecontab" (fecha de contabilización) dentro de _cargar_base.
 
 # ─────────────────────────────────────────────
 # SIDEBAR — FILTROS
@@ -621,20 +568,23 @@ with st.sidebar:
         on_change=_sincronizar_fechas_con_filtro, args=("MES", "mes_sel_widget"),
     )
 
+    coordinadores = ["Todos"] + sorted(c for c in base_full["_COORDINADOR"].unique().tolist() if c and c != "Sin asignar")
+    coord_sel = st.selectbox("Coordinador", coordinadores)
+
     supervisores = ["Todos"] + sorted(base_full["_SUPERVISOR"].unique().tolist())
     sup_sel = st.selectbox("Supervisor", supervisores)
 
-    niveles = ["Todos"] + sorted(base_full["Nivel Formación"].dropna().unique().tolist())
+    expertos = ["Todos"] + sorted(e for e in base_full["_ASESOR"].unique().tolist() if e and e != "Sin asignar")
+    experto_sel = st.selectbox("Experto asignado", expertos)
+
+    niveles = ["Todos"] + sorted(base_full["Nivel Formación"].replace("", pd.NA).dropna().unique().tolist())
     nivel_sel = st.selectbox("Nivel", niveles)
 
-    programas = ["Todos"] + sorted(base_full["Programa"].dropna().unique().tolist())
+    programas = ["Todos"] + sorted(base_full["Programa"].replace("", pd.NA).dropna().unique().tolist())
     prog_sel = st.selectbox("Programa", programas)
 
-    estados = ["Todos"] + sorted(base_full["ESTADO"].dropna().unique().tolist())
-    estado_sel = st.selectbox("Estado", estados)
-
-    financiaciones = ["Todos"] + sorted(base_full["Financiación"].dropna().unique().tolist())
-    financiacion_sel = st.selectbox("Financiación", financiaciones)
+    periodos = ["Todos"] + sorted(base_full["PERIODO ACADEMICO"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    periodo_sel = st.selectbox("Periodo académico", periodos)
 
     st.markdown("""
     <div class='sbf'>
@@ -651,6 +601,8 @@ with st.sidebar:
         <div class='sbf-credit'><span class='sbf-spark'>⚡</span>Desarrollado por Workforce Management</div>
     </div>
     """, unsafe_allow_html=True)
+
+_datos.boton_actualizar()
 
 # ─────────────────────────────────────────────
 # CSS
@@ -964,43 +916,36 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 # APLICAR FILTROS
 # ─────────────────────────────────────────────
+def _mask_filtros(df: pd.DataFrame) -> pd.Series:
+    """Máscara de los filtros del sidebar (sin el recorte Desde/Hasta)."""
+    m = pd.Series(True, index=df.index)
+    if cohorte_sel != "Todos":
+        m &= df["COHORTE"] == cohorte_sel
+    if mes_sel != "Todos":
+        m &= df["MES"] == mes_sel
+    if coord_sel != "Todos":
+        m &= df["_COORDINADOR"] == coord_sel
+    if sup_sel != "Todos":
+        m &= df["_SUPERVISOR"] == sup_sel
+    if experto_sel != "Todos":
+        m &= df["_ASESOR"] == experto_sel
+    if nivel_sel != "Todos":
+        m &= df["Nivel Formación"] == nivel_sel
+    if prog_sel != "Todos":
+        m &= df["Programa"] == prog_sel
+    if periodo_sel != "Todos":
+        m &= df["PERIODO ACADEMICO"].astype(str).str.strip() == periodo_sel
+    return m
+
+
 b = base_full.copy()
-mask = (b["_FECHA"].dt.date >= fecha_ini) & (b["_FECHA"].dt.date <= fecha_fin)
-if cohorte_sel != "Todos":
-    mask &= b["COHORTE"] == cohorte_sel
-if mes_sel != "Todos":
-    mask &= b["MES"] == mes_sel
-if sup_sel != "Todos":
-    mask &= b["_SUPERVISOR"] == sup_sel
-if nivel_sel != "Todos":
-    mask &= b["Nivel Formación"] == nivel_sel
-if prog_sel != "Todos":
-    mask &= b["Programa"] == prog_sel
-if estado_sel != "Todos":
-    mask &= b["ESTADO"] == estado_sel
-if financiacion_sel != "Todos":
-    mask &= b["Financiación"] == financiacion_sel
+mask = _mask_filtros(b) & (b["_FECHA"].dt.date >= fecha_ini) & (b["_FECHA"].dt.date <= fecha_fin)
 b = b[mask].copy()
 
 # Igual a `b` pero sin el recorte de Desde/Hasta: el comparativo de cumplimiento por
 # supervisor y mes necesita ver varios meses a la vez, y por defecto Desde/Hasta solo
 # cubren el mes en curso (para no arrastrar los residuales históricos de la Base).
-mask_sin_fecha = pd.Series(True, index=base_full.index)
-if cohorte_sel != "Todos":
-    mask_sin_fecha &= base_full["COHORTE"] == cohorte_sel
-if mes_sel != "Todos":
-    mask_sin_fecha &= base_full["MES"] == mes_sel
-if sup_sel != "Todos":
-    mask_sin_fecha &= base_full["_SUPERVISOR"] == sup_sel
-if nivel_sel != "Todos":
-    mask_sin_fecha &= base_full["Nivel Formación"] == nivel_sel
-if prog_sel != "Todos":
-    mask_sin_fecha &= base_full["Programa"] == prog_sel
-if estado_sel != "Todos":
-    mask_sin_fecha &= base_full["ESTADO"] == estado_sel
-if financiacion_sel != "Todos":
-    mask_sin_fecha &= base_full["Financiación"] == financiacion_sel
-b_sin_fecha = base_full[mask_sin_fecha].copy()
+b_sin_fecha = base_full[_mask_filtros(base_full)].copy()
 
 _base_avance = base_full
 if cohorte_sel != "Todos":
@@ -1011,15 +956,14 @@ _base_avance = _base_avance[(_base_avance["_FECHA"].dt.date >= fecha_ini) & (_ba
 tabla, total_general = _tabla_avance(_base_avance, metas_full, fecha_ini, fecha_fin)
 
 total_mat = len(b)
-pct_credito = (b["Financiación"] == "CREDITO").mean() * 100 if total_mat else 0
-descuento_total = abs(b["Descuento"].sum()) if total_mat else 0.0
+_dias_habiles_sel = _dias_habiles_rango(fecha_ini, fecha_fin)
+ticket_dia = (total_mat / _dias_habiles_sel) if _dias_habiles_sel else 0.0
 cumplimiento = (total_general["REAL"] / total_general["META"] * 100) if total_general["META"] else 0
 
 _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 _cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
 _cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-_leads_pg = st.Page("pages/5_Leads.py", title="Leads", icon="🎯")
 
 # ─────────────────────────────────────────────
 # ENCABEZADO
@@ -1035,7 +979,7 @@ with st.container(key="hdrbanner"):
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, nb6, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.1, 1.0], vertical_alignment="center")
+    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
     with nb1:
         if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
             st.switch_page(_home_pg)
@@ -1050,9 +994,6 @@ with st.container(key="hdrbanner"):
     with nb5:
         if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
-    with nb6:
-        if st.button("🎯 Leads", key="hdr_leads", width="stretch"):
-            st.switch_page(_leads_pg)
 
 # ─────────────────────────────────────────────
 # KPIs
@@ -1063,7 +1004,7 @@ def kpi_bar(pct, color, max_val=100):
 
 
 cumpl_color = COLOR_SUCCESS if cumplimiento >= 100 else (COLOR_WARNING if cumplimiento >= 70 else COLOR_DANGER)
-credito_color = "#818CF8"
+ticket_color = "#818CF8"
 faltan_total = int(total_general["FALTAN"])
 faltan_color = COLOR_SUCCESS if faltan_total == 0 else COLOR_DANGER
 
@@ -1099,14 +1040,14 @@ with k3:
         {kpi_bar(cumplimiento, cumpl_color)}
     </div>""", unsafe_allow_html=True)
 with k4:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{credito_color}'>
-        <div class='kpi-bg-icon'>💳</div>
+    st.markdown(f"""<div class='kpi-card' style='--kc:{ticket_color}'>
+        <div class='kpi-bg-icon'>📆</div>
         <div>
-            <div class='kpi-label'>% Crédito</div>
-            <div class='kpi-value' style='color:{credito_color}'>{pct_credito:.1f}%</div>
-            <div class='kpi-sub'>Descuento otorgado: {_fmt_cop(descuento_total)}</div>
+            <div class='kpi-label'>Ticket promedio día</div>
+            <div class='kpi-value' style='color:{ticket_color}'>{ticket_dia:,.1f}</div>
+            <div class='kpi-sub'>matrículas por día hábil · {_dias_habiles_sel} días en el rango</div>
         </div>
-        {kpi_bar(pct_credito, credito_color)}
+        {kpi_bar(ticket_dia, ticket_color, 100)}
     </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
@@ -1210,11 +1151,11 @@ with dcol1:
     </div>""", unsafe_allow_html=True)
     st.plotly_chart(_fig_nivel(b), width="stretch", config={"displayModeBar": False})
 with dcol2:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_ACCENT}'>
-        <span class='ch-icon'>💳</span>
-        <div class='ch-texts'><div class='ch-title'>Por financiación</div><div class='ch-sub'>Contado · Crédito · Pendiente</div></div>
+    st.markdown(f"""<div class='chart-hdr' style='--cc:#818CF8'>
+        <span class='ch-icon'>🧭</span>
+        <div class='ch-texts'><div class='ch-title'>Por cohorte</div><div class='ch-sub'>Matrículas contabilizadas por cohorte de ingreso</div></div>
     </div>""", unsafe_allow_html=True)
-    st.plotly_chart(_fig_financiacion(b), width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(_fig_cohorte(b), width="stretch", config={"displayModeBar": False})
 
 # ─────────────────────────────────────────────
 # TENDENCIA
@@ -1252,7 +1193,7 @@ _top_asesores = (
 )
 _top_supervisores = (
     b.dropna(subset=["_SUPERVISOR"]).groupby("_SUPERVISOR")
-    .agg(total=("_SUPERVISOR", "size"), ingreso=("Ingreso neto", "sum"))
+    .agg(total=("_SUPERVISOR", "size"), expertos=("_ASESOR", "nunique"))
     .sort_values("total", ascending=False).head(10)
 )
 _ultimas = b.dropna(subset=["_FECHA"]).sort_values("_FECHA", ascending=False).head(10)
@@ -1281,7 +1222,7 @@ with tcol3:
         <div class='ch-texts'><div class='ch-title'>Top 10 supervisores</div><div class='ch-sub'>Por volumen total</div></div>
     </div>""", unsafe_allow_html=True)
     _filas = [
-        (sup, f"{_fmt_cop(row['ingreso'])} ingreso neto", f"{int(row['total'])}")
+        (sup, f"{int(row['expertos'])} expertos", f"{int(row['total'])}")
         for sup, row in _top_supervisores.iterrows()
     ]
     st.markdown(_top_lista_html(_filas, COLOR_SUCCESS), unsafe_allow_html=True)
@@ -1301,13 +1242,10 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 _detalle = b.copy()
-_detalle["Ingreso neto"] = _detalle["Ingreso neto"].map(_fmt_cop)
-_detalle["Descuento"] = _detalle["Descuento"].map(_fmt_cop)
 cols_detalle = {
     "NOMBRE_COMPLETO": "NOMBRE", "Cedula": "CEDULA", "Programa": "PROGRAMA",
-    "Nivel Formación": "NIVEL", "COHORTE": "COHORTE", "ESTADO": "ESTADO",
-    "Financiación": "FINANCIACIÓN", "Ingreso neto": "INGRESO NETO", "Descuento": "DESCUENTO",
-    "_ASESOR": "ASESOR", "_SUPERVISOR": "SUPERVISOR", "_COORDINADOR": "COORDINADOR",
+    "Nivel Formación": "NIVEL", "COHORTE": "COHORTE", "PERIODO ACADEMICO": "PERIODO ACADÉMICO",
+    "_ASESOR": "EXPERTO", "_SUPERVISOR": "SUPERVISOR", "_COORDINADOR": "COORDINADOR",
     "Fecha Contabilización": "FECHA CONTABILIZACIÓN",
 }
 _detalle = _detalle[[c for c in cols_detalle if c in _detalle.columns]].rename(columns=cols_detalle)

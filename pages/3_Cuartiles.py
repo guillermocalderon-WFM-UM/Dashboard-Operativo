@@ -1,27 +1,14 @@
 import base64
 import io
-import urllib.parse
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Hojas de Google Sheets (compartidas como "Cualquiera con el enlace: Lector").
-# Cuartiles cruza 3 hojas: Base de Matrículas (fuente del cuartil), Base de Inscripciones
-# (solo para mostrar su real/meta) y Metas (respaldo para que salgan todos los asesores).
-_SHEET_ID_MATRICULAS = "1yh02o6obFpiMHUenyaBX6ZKmTivdSrY5_usVisb0I74"
-_SHEET_ID_INSCRIPCIONES = "14DOLvF_d-qhd-VBE62M6hnfqtOH3EYcggjBLgwHiC8w"
-_SHEET_ID_METAS = "1byJ5Sw_P_xKew5xMbWz9KQSTQfc_J-Fm"
-_SHEET_ID_LEADS = "1eJYJxr_9qOF4yTLjXU1fr1P9asoXdnzoY_MkWME9FhY"
+import _datos
 
-
-def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(nombre_hoja)}"
-    )
-
+# Cuartiles cruza 4 hojas (Matrículas, Inscripciones, Metas, Leads); la carga vive en _datos.py.
 
 # ─────────────────────────────────────────────
 # COLORES (mismo esquema que Matrículas / Inscripciones)
@@ -39,6 +26,100 @@ _MES_ORDEN = [
 
 _COLOR_CUARTIL = {"Q1": COLOR_DANGER, "Q2": COLOR_WARNING, "Q3": COLOR_ACCENT, "Q4": COLOR_SUCCESS}
 _CUARTIL_NUM = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+_ORDEN_Q = ["Q1", "Q2", "Q3", "Q4"]
+
+# Objetivo fijo de media por cuartil para MATRÍCULAS (definido por la operación, no cambia).
+_PROPUESTO_MAT = {"Q1": 6.5, "Q2": 9.5, "Q3": 13.0, "Q4": 39.5}
+
+
+def _tabla_umbrales(df: pd.DataFrame, col_valor: str, col_cuartil: str, propuesto_fijo: dict | None = None) -> pd.DataFrame:
+    """Resumen por cuartil: FOTO (límite inferior real del grupo), REAL (media del grupo),
+    PROPUESTO (fijo para matrículas; = umbral real del Q siguiente para inscripciones) y
+    %CUMPLIM = REAL / PROPUESTO."""
+    sub = df.dropna(subset=[col_valor, col_cuartil])
+    sub = sub[sub[col_cuartil].isin(_ORDEN_Q)]
+    if sub.empty:
+        return pd.DataFrame(columns=["FOTO", "REAL", "PROPUESTO", "CUMPL"], index=_ORDEN_Q)
+    g = sub.groupby(col_cuartil)[col_valor]
+    foto = g.min().reindex(_ORDEN_Q)
+    real = g.mean().reindex(_ORDEN_Q)
+    if propuesto_fijo:
+        prop = pd.Series(propuesto_fijo).reindex(_ORDEN_Q).astype(float)
+    else:
+        # umbral para "pasar" a cada Q = límite inferior del Q siguiente; Q4 = máximo observado
+        prop = pd.Series({
+            "Q1": foto.get("Q2"), "Q2": foto.get("Q3"), "Q3": foto.get("Q4"),
+            "Q4": float(sub[col_valor].max()),
+        })
+    out = pd.DataFrame({"FOTO": foto, "REAL": real, "PROPUESTO": prop})
+    out["CUMPL"] = (out["REAL"] / out["PROPUESTO"] * 100).where(out["PROPUESTO"] > 0, 0.0)
+    return out
+
+
+_UMBRAL_CSS = """
+<style>
+.umb-panel{position:relative;border-radius:20px;padding:18px 18px 14px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.02) 100%);
+  border:1px solid rgba(255,255,255,0.10);
+  box-shadow:0 18px 44px -20px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.07);}
+.umb-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.umb-ico{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-size:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);}
+.umb-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#fff;letter-spacing:-0.2px;}
+.umb-sub{font-size:10px;color:rgba(255,255,255,0.40);margin-top:1px;}
+.umb-row{display:grid;grid-template-columns:44px 1fr 1fr 1fr;gap:10px;align-items:center;
+  padding:11px 12px;border-radius:13px;margin-bottom:8px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));
+  border:1px solid rgba(255,255,255,0.08);border-left:3px solid var(--q);}
+.umb-row:last-child{margin-bottom:0;}
+.umb-q{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:14px;color:var(--q);
+  text-align:center;}
+.umb-cell{text-align:center;}
+.umb-cell .lbl{display:block;font-size:8px;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;
+  color:rgba(255,255,255,0.32);margin-bottom:3px;}
+.umb-cell .val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:rgba(255,255,255,0.92);}
+.umb-cell.prop .val{color:#7DD3FC;}
+.umb-bar-row{grid-column:1 / -1;display:flex;align-items:center;gap:9px;margin-top:8px;}
+.umb-bar-track{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,0.10);overflow:hidden;}
+.umb-bar-fill{height:100%;border-radius:99px;box-shadow:0 0 8px -1px currentColor;}
+.umb-pct{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:12px;min-width:38px;text-align:right;}
+.umb-pct .cap{font-size:8px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:0.06em;margin-right:6px;text-transform:uppercase;}
+</style>
+"""
+
+
+def _render_tabla_umbrales(t: pd.DataFrame, titulo: str, icono: str, sub: str) -> None:
+    def _n(x):
+        return "—" if pd.isna(x) else f"{x:,.1f}".replace(",", ".")
+
+    rows = []
+    for q in _ORDEN_Q:
+        if q not in t.index:
+            continue
+        r = t.loc[q]
+        cq = _COLOR_CUARTIL[q]
+        pct = 0.0 if pd.isna(r["CUMPL"]) else float(r["CUMPL"])
+        cpct = COLOR_SUCCESS if pct >= 100 else (COLOR_WARNING if pct >= 70 else COLOR_DANGER)
+        foto = "&gt; " + _n(r["FOTO"]) if q == "Q4" else _n(r["FOTO"])
+        rows.append(
+            f"<div class='umb-row' style='--q:{cq}'>"
+            f"<div class='umb-q'>{q}</div>"
+            f"<div class='umb-cell'><span class='lbl'>Foto</span><span class='val'>{foto}</span></div>"
+            f"<div class='umb-cell'><span class='lbl'>Real</span><span class='val'>{_n(r['REAL'])}</span></div>"
+            f"<div class='umb-cell prop'><span class='lbl'>Propuesto</span><span class='val'>{_n(r['PROPUESTO'])}</span></div>"
+            f"<div class='umb-bar-row'>"
+            f"<div class='umb-bar-track'><div class='umb-bar-fill' style='width:{min(pct,100):.0f}%;background:{cpct}'></div></div>"
+            f"<span class='umb-pct' style='color:{cpct}'><span class='cap'>cumpl</span>{pct:.0f}%</span>"
+            f"</div></div>"
+        )
+    st.markdown(
+        _UMBRAL_CSS
+        + f"<div class='umb-panel'><div class='umb-head'><div class='umb-ico'>{icono}</div>"
+        f"<div><div class='umb-title'>{titulo}</div><div class='umb-sub'>{sub}</div></div></div>"
+        + "".join(rows)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -69,46 +150,19 @@ def df_descarga(df, nombre_archivo, **kwargs):
 # ─────────────────────────────────────────────
 # CARGA DE DATOS
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_matriculas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_MATRICULAS, "Base"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df = df[df["Cedula"].notna()].copy()
-    df["_CC"] = pd.to_numeric(df["Documento"], errors="coerce").astype("Int64")
-    df["_ASESOR"] = df["Asesor.1"].fillna(df["Asesor"]).fillna("Sin asignar")
-    df["_SUPERVISOR"] = df["Supervisor.1"].fillna("Sin asignar")
-    return df
+# Matrículas ya viene resuelta (8 mensuales + directorio): trae _CC, _ASESOR, _SUPERVISOR, MES, AÑO.
+_cargar_matriculas = _datos.matriculas
+_cargar_metas = _datos.metas
+_cargar_leads = _datos.leads
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(show_spinner=False)
 def _cargar_inscripciones() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_INSCRIPCIONES, "Base"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
+    df = _datos.inscripciones()
     df = df[df["DNI"].notna()].copy()
     df["_CC"] = pd.to_numeric(df["CEDULA AGENT"], errors="coerce").astype("Int64")
     df["_ASESOR"] = df["NOMBRE AGENT"].fillna("Sin asignar")
     df["_SUPERVISOR"] = df["SUPERVISOR"].fillna("Sin asignar")
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_metas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_METAS, "Consolidado"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df["_CC"] = pd.to_numeric(df["CC"], errors="coerce").astype("Int64")
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_leads() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_LEADS, "Resumen diario"), encoding="utf-8", low_memory=False)
-    df.columns = df.columns.str.strip()
-    df["_FECHA"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["_FECHA"]).copy()
-    df["_CC"] = pd.to_numeric(df["Cedula"], errors="coerce").astype("Int64")
-    df["_INSUMO"] = pd.to_numeric(df["Leads asignados ese día"], errors="coerce").fillna(0).astype(int)
-    df["MES"] = df["_FECHA"].dt.month.map(lambda m: _MES_ORDEN[int(m) - 1])
-    df["AÑO"] = df["_FECHA"].dt.year
     return df
 
 
@@ -118,11 +172,13 @@ _COLS_CLASIFICACION = [
 ]
 
 
-def _tabla_clasificacion(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame, mes_sel: str) -> pd.DataFrame:
+@st.cache_data(show_spinner=False)
+def _tabla_clasificacion(mes_sel: str) -> pd.DataFrame:
     """Universo del mes = todos los asesores con Meta asignada ese MES/AÑO (Metas es el
     respaldo para que aparezcan aunque tengan 0 real). El cuartil se calcula sobre REAL_MAT
     de ese universo completo — un asesor en 0 matrículas es un dato de desempeño válido,
-    no se excluye."""
+    no se excluye. Cacheado por mes: se llama muchas veces (evolución + período)."""
+    mat, insc, metas, leads = _cargar_matriculas(), _cargar_inscripciones(), _cargar_metas(), _cargar_leads()
     anios = metas.loc[metas["MES"] == mes_sel, "AÑO"].dropna()
     if not len(anios):
         return pd.DataFrame(columns=_COLS_CLASIFICACION)
@@ -181,19 +237,48 @@ def _tabla_clasificacion(mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFr
     return tabla.reset_index(drop=True)
 
 
-def _tabla_evolucion_reciente(
-    mat: pd.DataFrame, insc: pd.DataFrame, metas: pd.DataFrame, leads: pd.DataFrame,
-    meses_disponibles: list[str], n_meses: int = 3,
-) -> tuple[list[dict], list[str]]:
+@st.cache_data(show_spinner=False)
+def _tabla_periodo(mes_sel: str, meses_ventana: tuple) -> pd.DataFrame:
+    """Igual que `_tabla_clasificacion` pero soporta mes_sel == 'Todos': SUMA
+    matrículas/inscripciones/meta/insumo de cada asesor en la ventana de meses y
+    recalcula cuartiles sobre ese total."""
+    if mes_sel != "Todos":
+        return _tabla_clasificacion(mes_sel)
+
+    partes = [_tabla_clasificacion(m) for m in meses_ventana]
+    partes = [p for p in partes if len(p)]
+    if not partes:
+        return pd.DataFrame(columns=_COLS_CLASIFICACION)
+    allp = pd.concat(partes, ignore_index=True)
+    t = allp.groupby("ASESOR", as_index=False).agg(
+        SUPERVISOR=("SUPERVISOR", "first"),
+        META_INSC=("META_INSC", "sum"), META_MAT=("META_MAT", "sum"),
+        REAL_INSC=("REAL_INSC", "sum"), REAL_MAT=("REAL_MAT", "sum"), INSUMO=("INSUMO", "sum"),
+    )
+    for c in ("META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO"):
+        t[c] = t[c].round().astype(int)
+    t["CUMPL_INSC"] = np.where(t["META_INSC"] > 0, t["REAL_INSC"] / t["META_INSC"] * 100,
+                               np.where(t["REAL_INSC"] > 0, 100.0, 0.0))
+    t["CUMPL_MAT"] = np.where(t["META_MAT"] > 0, t["REAL_MAT"] / t["META_MAT"] * 100,
+                              np.where(t["REAL_MAT"] > 0, 100.0, 0.0))
+    if len(t) >= 4:
+        t["CUARTIL"] = pd.qcut(t["REAL_MAT"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        t["CUARTIL_INSC"] = pd.qcut(t["REAL_INSC"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+    else:
+        t["CUARTIL"] = t["CUARTIL_INSC"] = "Q4"
+    return t[_COLS_CLASIFICACION].sort_values("REAL_MAT", ascending=False).reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False)
+def _tabla_evolucion_reciente(meses_recientes: tuple) -> tuple[list[dict], list[str]]:
     """Una fila por asesor con Matrículas/Inscripciones/Cuartil (de cada métrica) de cada uno
-    de los últimos n_meses, más un cuartil CONSOLIDADO por métrica (calculado sobre la suma de
-    los n_meses, no mes a mes) y si evolucionó (comparando su primer y último cuartil de
-    matrículas válido en la ventana). Universo = unión de asesores clasificados en cualquiera
-    de esos meses (todos los expertos, no sólo los del mes más reciente)."""
-    meses_recientes = meses_disponibles[-n_meses:]
+    de los meses de la ventana, más un cuartil CONSOLIDADO por métrica (sobre el promedio
+    mensual) y si evolucionó (comparando su primer y último cuartil de matrículas válido).
+    Universo = unión de asesores clasificados en cualquiera de esos meses."""
+    meses_recientes = list(meses_recientes)
     tablas_mes = {}
     for mes in meses_recientes:
-        t = _tabla_clasificacion(mat, insc, metas, leads, mes)
+        t = _tabla_clasificacion(mes)
         # Un mismo nombre puede tener dos cédulas distintas en la base (dato duplicado/reingreso);
         # sin agrupar, t.loc[asesor] devolvería 2 filas en vez de 1 y rompería el resto de la función.
         tablas_mes[mes] = t.groupby("ASESOR", as_index=True).agg(
@@ -231,18 +316,21 @@ def _tabla_evolucion_reciente(
 
         delta = cuartiles_validos[-1] - cuartiles_validos[0] if len(cuartiles_validos) >= 2 else None
 
+        n = len(meses_recientes) or 1
         filas.append({
             "ASESOR": asesor, "SUPERVISOR": supervisor, "MESES": meses_data,
-            "MAT_TOTAL": mat_total, "INSC_TOTAL": insc_total, "DELTA": delta,
+            "MAT_TOTAL": mat_total, "INSC_TOTAL": insc_total,
+            "MAT_PROM": mat_total / n, "INSC_PROM": insc_total / n, "DELTA": delta,
         })
 
-    # Cuartil consolidado: se calcula sobre la suma de los n_meses de TODO el universo, no
-    # promediando los cuartiles mensuales (evita que un mes malo puntual pese más de la cuenta).
+    # Cuartil consolidado: sobre el PROMEDIO mensual de los n_meses de TODO el universo
+    # (el ranking es idéntico al de la suma; se promedia para que el número mostrado sea
+    # "matrículas por mes" y calce con las tablas de umbrales).
     if len(filas) >= 4:
-        mat_totales = pd.Series([f["MAT_TOTAL"] for f in filas])
-        insc_totales = pd.Series([f["INSC_TOTAL"] for f in filas])
-        q_mat = pd.qcut(mat_totales.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
-        q_insc = pd.qcut(insc_totales.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        mat_prom = pd.Series([f["MAT_PROM"] for f in filas])
+        insc_prom = pd.Series([f["INSC_PROM"] for f in filas])
+        q_mat = pd.qcut(mat_prom.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
+        q_insc = pd.qcut(insc_prom.rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"]).astype(str)
         for f, qm, qi in zip(filas, q_mat, q_insc):
             f["CUARTIL_MAT_CONSOLIDADO"] = qm
             f["CUARTIL_INSC_CONSOLIDADO"] = qi
@@ -330,36 +418,6 @@ def _top_lista_html(filas: list[tuple[str, str, str]], color: str) -> str:
 # ─────────────────────────────────────────────
 # GRÁFICOS
 # ─────────────────────────────────────────────
-def _fig_conversion(tabla: pd.DataFrame, min_insumo: int = 30, top_n: int = 15) -> go.Figure:
-    """Conversión = Matrículas reales / Insumo (leads) recibidos, en %. Sólo asesores con
-    insumo suficiente (min_insumo) para que el % no sea ruido de muestras muy chicas."""
-    d = tabla[tabla["INSUMO"] >= min_insumo].copy()
-    d["CONVERSION"] = d["REAL_MAT"] / d["INSUMO"] * 100
-    d = d.sort_values("CONVERSION", ascending=False).head(top_n).sort_values("CONVERSION")
-
-    mediana = d["CONVERSION"].median() if len(d) else 0
-    colores = [COLOR_SUCCESS if v >= mediana else COLOR_WARNING for v in d["CONVERSION"].tolist()]
-
-    fig = go.Figure(go.Bar(
-        x=d["CONVERSION"].tolist(), y=[str(a)[:34] for a in d["ASESOR"].tolist()], orientation="h",
-        marker=dict(color=colores),
-        text=[f"{v:.1f}%" for v in d["CONVERSION"].tolist()], textposition="outside", cliponaxis=False,
-        textfont=dict(size=10, color="#CBD3F2", family="Inter"),
-        customdata=d["INSUMO"].tolist(),
-        hovertemplate="<b>%{y}</b><br>%{x:.1f}% conversión<br>%{customdata} leads recibidos<extra></extra>",
-    ))
-    fig.update_layout(
-        height=max(280, len(d) * 26 + 60), margin=dict(l=10, r=50, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", ticksuffix="%",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
-        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-    )
-    return fig
-
-
 def _fig_cuartil_supervisor(tabla: pd.DataFrame) -> go.Figure:
     grp = tabla.groupby(["SUPERVISOR", "CUARTIL"]).size().unstack(fill_value=0)
     for q in ["Q1", "Q2", "Q3", "Q4"]:
@@ -384,6 +442,89 @@ def _fig_cuartil_supervisor(tabla: pd.DataFrame) -> go.Figure:
                    automargin=True),
         yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
                    automargin=True),
+    )
+    return fig
+
+
+# Todas las gráficas del bloque "Análisis de Cuartiles" comparten alto y márgenes
+# para que queden alineadas a la misma altura.
+_FIG_H = 330
+_LAYOUT_BASE = dict(
+    height=_FIG_H, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
+    margin=dict(l=50, r=25, t=45, b=45),
+)
+_AXIS = dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=False)
+_LEGEND = dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)")
+
+
+def _fig_movilidad(filas: list[dict]) -> go.Figure:
+    """Heatmap 4x4: cuartil del primer mes con dato vs cuartil del último — mide movilidad."""
+    idx = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
+    M = [[0] * 4 for _ in range(4)]
+    for f in filas:
+        qs = [m["CUARTIL"] for m in f["MESES"] if m]
+        if len(qs) >= 2:
+            M[idx[qs[0]]][idx[qs[-1]]] += 1
+    fig = go.Figure(go.Heatmap(
+        z=M, x=["Q1", "Q2", "Q3", "Q4"], y=["Q1", "Q2", "Q3", "Q4"],
+        text=M, texttemplate="%{text}", textfont=dict(size=13, color="white"),
+        colorscale=[[0, "rgba(129,140,248,0.05)"], [1, "#818CF8"]], showscale=False,
+        xgap=3, ygap=3,
+        hovertemplate="De %{y} a %{x}: %{z} asesores<extra></extra>",
+    ))
+    fig.update_layout(
+        **_LAYOUT_BASE,
+        xaxis=dict(title="Cuartil al final", tickfont=dict(size=11, color="rgba(255,255,255,0.7)")),
+        yaxis=dict(title="Cuartil al inicio", autorange="reversed", tickfont=dict(size=11, color="rgba(255,255,255,0.7)")),
+    )
+    return fig
+
+
+def _fig_embudo_cuartil(tabla: pd.DataFrame) -> go.Figure:
+    g = tabla.groupby("CUARTIL")[["REAL_INSC", "REAL_MAT"]].mean().reindex(_ORDEN_Q).fillna(0)
+    fig = go.Figure()
+    fig.add_bar(x=g.index, y=g["REAL_INSC"], name="Inscripciones", marker_color="#818CF8",
+                text=[f"{v:.1f}" for v in g["REAL_INSC"]], textposition="outside")
+    fig.add_bar(x=g.index, y=g["REAL_MAT"], name="Matrículas", marker_color=COLOR_SUCCESS,
+                text=[f"{v:.1f}" for v in g["REAL_MAT"]], textposition="outside")
+    fig.update_layout(
+        barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
+        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")), yaxis=_AXIS,
+    )
+    return fig
+
+
+def _fig_cumpl_cuartil(tabla: pd.DataFrame) -> go.Figure:
+    g = tabla.groupby("CUARTIL")[["CUMPL_MAT", "CUMPL_INSC"]].mean().reindex(_ORDEN_Q).fillna(0)
+    fig = go.Figure()
+    fig.add_bar(x=g.index, y=g["CUMPL_MAT"], name="Cumpl. Matrículas", marker_color=COLOR_SUCCESS,
+                text=[f"{v:.0f}%" for v in g["CUMPL_MAT"]], textposition="outside")
+    fig.add_bar(x=g.index, y=g["CUMPL_INSC"], name="Cumpl. Inscripciones", marker_color=COLOR_ACCENT,
+                text=[f"{v:.0f}%" for v in g["CUMPL_INSC"]], textposition="outside")
+    fig.add_hline(y=100, line_dash="dot", line_color="rgba(255,255,255,0.3)")
+    fig.update_layout(
+        barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
+        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")),
+        yaxis=dict(ticksuffix="%", **_AXIS),
+    )
+    return fig
+
+
+def _fig_scatter_insc_mat(tabla: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    for q in _ORDEN_Q:
+        d = tabla[tabla["CUARTIL"] == q]
+        if not len(d):
+            continue
+        fig.add_scatter(
+            x=d["REAL_INSC"], y=d["REAL_MAT"], mode="markers", name=q,
+            marker=dict(color=_COLOR_CUARTIL[q], size=8, line=dict(color="rgba(8,6,15,0.5)", width=1)),
+            text=d["ASESOR"], hovertemplate="<b>%{text}</b><br>Insc: %{x}<br>Mat: %{y}<extra></extra>",
+        )
+    fig.update_layout(
+        **_LAYOUT_BASE, legend=_LEGEND,
+        xaxis=dict(title="Inscripciones", **_AXIS), yaxis=dict(title="Matrículas", **_AXIS),
     )
     return fig
 
@@ -419,7 +560,10 @@ def _badge_evolucion_html(delta) -> str:
 
 def _fila_evolucion_html(fila: dict) -> str:
     celdas_meses = "".join(_celda_mes_html(m) for m in fila["MESES"])
-    celda_consolidado = _qcell_html(fila["MAT_TOTAL"], fila["CUARTIL_MAT_CONSOLIDADO"]) + _qcell_html(fila["INSC_TOTAL"], fila["CUARTIL_INSC_CONSOLIDADO"])
+    celda_consolidado = (
+        _qcell_html(f"{fila['MAT_PROM']:.1f}", fila["CUARTIL_MAT_CONSOLIDADO"])
+        + _qcell_html(f"{fila['INSC_PROM']:.1f}", fila["CUARTIL_INSC_CONSOLIDADO"])
+    )
     return (
         "<tr>"
         f"<td class='sup-cell'>{fila['ASESOR']}</td>"
@@ -441,7 +585,7 @@ def _render_tabla_evolucion(filas: list[dict], meses_recientes: list[str]):
         "<div class='avance-tabla-wrap'><table class='avance-tabla'><thead>"
         "<tr><th class='grp-sup' rowspan='2'>Asesor</th><th class='grp-sup' rowspan='2'>Supervisor</th>"
         f"{meses_headers}"
-        "<th class='grp-consolidado' colspan='2'>Consolidado (3 meses)</th>"
+        f"<th class='grp-consolidado' colspan='2'>Promedio ({len(meses_recientes)} meses)</th>"
         "<th class='grp-total' rowspan='2'>Evolución</th></tr>"
         f"<tr>{meses_subheaders}<th class='grp-consolidado'>Mat.</th><th class='grp-consolidado'>Insc.</th></tr>"
         "</thead><tbody>"
@@ -466,12 +610,10 @@ except FileNotFoundError:
 # ─────────────────────────────────────────────
 # CARGA
 # ─────────────────────────────────────────────
-mat_full = _cargar_matriculas()
-insc_full = _cargar_inscripciones()
-metas_full = _cargar_metas()
-leads_full = _cargar_leads()
-
-meses_disponibles = [m for m in _MES_ORDEN if m in mat_full["MES"].unique()]
+# Los DataFrames completos ya no se pasan a mano: las tablas pesadas (_tabla_clasificacion,
+# _tabla_periodo, _tabla_evolucion_reciente) están cacheadas por mes y leen de _datos por dentro.
+_meses_mat = _cargar_matriculas()["MES"].dropna().unique()
+meses_disponibles = [m for m in _MES_ORDEN if m in _meses_mat]
 
 # ─────────────────────────────────────────────
 # SIDEBAR — FILTROS
@@ -507,8 +649,9 @@ with st.sidebar:
         <div class='sbh-rule'></div>
     </div>""", unsafe_allow_html=True)
 
+    _MESES_VENTANA = meses_disponibles[-6:]
     if meses_disponibles:
-        mes_sel = st.selectbox("Mes", meses_disponibles, index=len(meses_disponibles) - 1)
+        mes_sel = st.selectbox("Mes", ["Todos"] + _MESES_VENTANA, index=0)
     else:
         mes_sel = None
         st.caption("⚠️ Sin datos de matrículas para cuartilizar.")
@@ -519,9 +662,15 @@ with st.sidebar:
         <div class='sbh-rule'></div>
     </div>""", unsafe_allow_html=True)
 
-    tabla_mes_full = _tabla_clasificacion(mat_full, insc_full, metas_full, leads_full, mes_sel) if mes_sel else pd.DataFrame(columns=_COLS_CLASIFICACION)
-    supervisores = ["Todos"] + sorted(tabla_mes_full["SUPERVISOR"].unique().tolist())
+    tabla_mes_full = (
+        _tabla_periodo(mes_sel, tuple(_MESES_VENTANA))
+        if mes_sel else pd.DataFrame(columns=_COLS_CLASIFICACION)
+    )
+    supervisores = ["Todos"] + sorted(s for s in tabla_mes_full["SUPERVISOR"].unique().tolist() if s and s != "Sin asignar")
     sup_sel = st.selectbox("Supervisor", supervisores)
+
+    expertos = ["Todos"] + sorted(e for e in tabla_mes_full["ASESOR"].unique().tolist() if e and e != "Sin asignar")
+    exp_sel = st.selectbox("Experto", expertos)
 
     st.markdown("""
     <div class='sbf'>
@@ -538,6 +687,8 @@ with st.sidebar:
         <div class='sbf-credit'><span class='sbf-spark'>⚡</span>Desarrollado por Workforce Management</div>
     </div>
     """, unsafe_allow_html=True)
+
+_datos.boton_actualizar()
 
 # ─────────────────────────────────────────────
 # CSS
@@ -852,7 +1003,6 @@ _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-_leads_pg = st.Page("pages/5_Leads.py", title="Leads", icon="🎯")
 
 with st.container(key="hdrbanner"):
     st.markdown(f"""
@@ -864,7 +1014,7 @@ with st.container(key="hdrbanner"):
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, nb6, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.1, 1.0], vertical_alignment="center")
+    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
     with nb1:
         if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
             st.switch_page(_home_pg)
@@ -879,15 +1029,21 @@ with st.container(key="hdrbanner"):
     with nb5:
         if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
-    with nb6:
-        if st.button("🎯 Leads", key="hdr_leads", width="stretch"):
-            st.switch_page(_leads_pg)
 
 if not mes_sel:
     st.stop()
 
 tabla_mes = tabla_mes_full
-tabla_vista = tabla_mes if sup_sel == "Todos" else tabla_mes[tabla_mes["SUPERVISOR"] == sup_sel]
+tabla_vista = tabla_mes
+if sup_sel != "Todos":
+    tabla_vista = tabla_vista[tabla_vista["SUPERVISOR"] == sup_sel]
+if exp_sel != "Todos":
+    tabla_vista = tabla_vista[tabla_vista["ASESOR"] == exp_sel]
+
+_es_todos = mes_sel == "Todos"
+_n_ventana = len(_MESES_VENTANA)
+_periodo_lbl = "el total de los últimos 6 meses" if _es_todos else mes_sel
+_mes_lbl = "Total 6 meses" if _es_todos else mes_sel
 
 # ─────────────────────────────────────────────
 # KPIs
@@ -910,7 +1066,7 @@ with k1:
         <div>
             <div class='kpi-label'>Total asesores</div>
             <div class='kpi-value' style='color:#7DD3FC'>{total_asesores}</div>
-            <div class='kpi-sub'>cuartilizados en {mes_sel}</div>
+            <div class='kpi-sub'>cuartilizados · {_mes_lbl}</div>
         </div>
         {kpi_bar(total_asesores, COLOR_ACCENT, max(total_asesores, 1))}
     </div>""", unsafe_allow_html=True)
@@ -946,19 +1102,49 @@ with k4:
     </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# EVOLUCIÓN RECIENTE (ÚLTIMOS 3 MESES) — primera tabla del módulo
+# UMBRALES DE CUARTIL — real vs propuesto (mes seleccionado)
 # ─────────────────────────────────────────────
-_N_MESES_EVOLUCION = 3
-_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(
-    mat_full, insc_full, metas_full, leads_full, meses_disponibles, n_meses=_N_MESES_EVOLUCION
-)
+# El propuesto de matrículas es un objetivo POR MES, así que los umbrales siempre se miden
+# sobre matrículas/inscripciones por mes (con "Todos" se divide el total entre 6).
+_umbral_base = tabla_mes_full.copy()
+_umbral_lbl = mes_sel
+if _es_todos and len(_umbral_base):
+    for _c in ("REAL_MAT", "REAL_INSC"):
+        _umbral_base[_c] = _umbral_base[_c] / _n_ventana
+    _umbral_lbl = "promedio mensual (6 meses)"
+
+st.markdown(f"""
+<div class='sec-header' style='--sc:#0EA5E9'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📐</div>
+    <div class='sec-text'>
+        <div class='sec-title'>Umbrales de Cuartil — {_umbral_lbl}</div>
+        <div class='sec-desc'>Dónde caen los cortes reales de cada cuartil (por mes) frente al objetivo propuesto. Matrículas usa un propuesto fijo; inscripciones usa el umbral real del cuartil siguiente.</div>
+    </div>
+    <span class='sec-tag' style='background:#0EA5E9'>Calibración</span>
+</div>
+""", unsafe_allow_html=True)
+
+_umbral_mat = _tabla_umbrales(_umbral_base, "REAL_MAT", "CUARTIL", _PROPUESTO_MAT)
+_umbral_insc = _tabla_umbrales(_umbral_base, "REAL_INSC", "CUARTIL_INSC")
+_uc1, _uc2 = st.columns(2)
+with _uc1:
+    _render_tabla_umbrales(_umbral_mat, "Matrículas", "🎓", "Propuesto fijo · Q1 6,5 · Q2 9,5 · Q3 13 · Q4 39,5")
+with _uc2:
+    _render_tabla_umbrales(_umbral_insc, "Inscripciones", "📝", "Propuesto = umbral real del cuartil siguiente")
+
+# ─────────────────────────────────────────────
+# EVOLUCIÓN RECIENTE (ÚLTIMOS 6 MESES) — primera tabla del módulo
+# ─────────────────────────────────────────────
+_N_MESES_EVOLUCION = 6
+_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(tuple(meses_disponibles[-_N_MESES_EVOLUCION:]))
+_n_ev = len(_meses_evolucion)
 
 st.markdown(f"""
 <div class='sec-header' style='--sc:{COLOR_ACCENT}'>
     <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
     <div class='sec-text'>
         <div class='sec-title'>Evolución Reciente</div>
-        <div class='sec-desc'>Matrículas e inscripciones de cada asesor en {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"}, con su cuartil por cada métrica — y un cuartil consolidado sobre la suma de los 3 meses.</div>
+        <div class='sec-desc'>Matrículas e inscripciones de cada asesor en {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"}, con su cuartil por cada métrica — y un cuartil consolidado sobre el promedio mensual de los {_n_ev} meses.</div>
     </div>
     <span class='sec-tag' style='background:{COLOR_ACCENT}'>{len(_filas_evolucion)} asesores</span>
 </div>
@@ -976,19 +1162,66 @@ st.markdown(f"""
 <div class='sec-header' style='--sc:#818CF8'>
     <div class='sec-icon' style='background:linear-gradient(135deg,rgba(129,140,248,0.20),rgba(129,140,248,0.06))'>🧭</div>
     <div class='sec-text'>
-        <div class='sec-title'>Desempeño Sostenido por Supervisor</div>
-        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil CONSOLIDADO de matrículas de {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"} — no un mes bueno aislado, sino el trimestre completo.</div>
+        <div class='sec-title'>Cuartil de Matrículas por Supervisor</div>
+        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil de matrículas — según {_periodo_lbl}.</div>
     </div>
-    <span class='sec-tag' style='background:#818CF8'>Trimestral</span>
+    <span class='sec-tag' style='background:#818CF8'>Distribución</span>
 </div>
 """, unsafe_allow_html=True)
-if _filas_evolucion:
-    _df_consolidado = pd.DataFrame([
-        {"SUPERVISOR": f["SUPERVISOR"], "CUARTIL": f["CUARTIL_MAT_CONSOLIDADO"]} for f in _filas_evolucion
-    ])
-    st.plotly_chart(_fig_cuartil_supervisor(_df_consolidado), width="stretch", config={"displayModeBar": False})
+if len(tabla_vista):
+    st.plotly_chart(_fig_cuartil_supervisor(tabla_vista[["SUPERVISOR", "CUARTIL"]]), width="stretch", config={"displayModeBar": False})
 else:
-    st.caption("Sin histórico suficiente para esta gráfica.")
+    st.caption("Sin datos para esta gráfica.")
+
+# ─────────────────────────────────────────────
+# ANÁLISIS DE CUARTILES
+# ─────────────────────────────────────────────
+st.markdown("""
+<div class='sec-header' style='--sc:#F59E0B'>
+    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(245,158,11,0.20),rgba(245,158,11,0.06))'>🔬</div>
+    <div class='sec-text'>
+        <div class='sec-title'>Análisis de Cuartiles</div>
+        <div class='sec-desc'>Movilidad entre cuartiles, embudo por nivel, cumplimiento de meta y eficiencia por asesor.</div>
+    </div>
+    <span class='sec-tag' style='background:#F59E0B'>Diagnóstico</span>
+</div>
+""", unsafe_allow_html=True)
+
+_ac1, _ac2 = st.columns(2)
+with _ac1:
+    st.markdown("<div class='chart-hdr' style='--cc:#818CF8'><span class='ch-icon'>🔀</span><div class='ch-texts'>"
+                "<div class='ch-title'>Movilidad de cuartil</div><div class='ch-sub'>Cuartil al inicio → al final de los 6 meses</div></div></div>",
+                unsafe_allow_html=True)
+    if _filas_evolucion:
+        st.plotly_chart(_fig_movilidad(_filas_evolucion), width="stretch", config={"displayModeBar": False})
+    else:
+        st.caption("Sin histórico suficiente.")
+with _ac2:
+    st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>🎯</span><div class='ch-texts'>"
+                "<div class='ch-title'>Cumplimiento de meta por cuartil</div><div class='ch-sub'>Promedio de % de meta alcanzado</div></div></div>",
+                unsafe_allow_html=True)
+    if len(tabla_vista):
+        st.plotly_chart(_fig_cumpl_cuartil(tabla_vista), width="stretch", config={"displayModeBar": False})
+    else:
+        st.caption("Sin datos.")
+
+_ac3, _ac4 = st.columns(2)
+with _ac3:
+    st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>📊</span><div class='ch-texts'>"
+                "<div class='ch-title'>Inscripción → Matrícula por cuartil</div><div class='ch-sub'>Promedio por asesor de cada grupo</div></div></div>",
+                unsafe_allow_html=True)
+    if len(tabla_vista):
+        st.plotly_chart(_fig_embudo_cuartil(tabla_vista), width="stretch", config={"displayModeBar": False})
+    else:
+        st.caption("Sin datos.")
+with _ac4:
+    st.markdown("<div class='chart-hdr' style='--cc:#F59E0B'><span class='ch-icon'>✨</span><div class='ch-texts'>"
+                "<div class='ch-title'>Inscripciones vs Matrículas</div><div class='ch-sub'>Cada punto es un asesor · color = cuartil</div></div></div>",
+                unsafe_allow_html=True)
+    if len(tabla_vista):
+        st.plotly_chart(_fig_scatter_insc_mat(tabla_vista), width="stretch", config={"displayModeBar": False})
+    else:
+        st.caption("Sin datos.")
 
 # ─────────────────────────────────────────────
 # CLASIFICACIÓN DE ASESORES
@@ -1007,7 +1240,7 @@ st.markdown(f"""
 st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
     <span class='tbl-hdr-icon'>📋</span>
     <div class='tbl-hdr-body'>
-        <div class='tbl-hdr-title'>Asesores — {mes_sel}</div>
+        <div class='tbl-hdr-title'>Asesores — {_mes_lbl}</div>
         <div class='tbl-hdr-desc'>Ordenado por matrículas reales, de mayor a menor</div>
     </div>
     <span class='tbl-hdr-badge'>{len(tabla_vista)} asesores</span>
@@ -1063,41 +1296,4 @@ with tcol2:
     </div>""", unsafe_allow_html=True)
     _filas = [(row["ASESOR"], row["SUPERVISOR"], f"{int(row['REAL_MAT'])}") for _, row in _ultimos10.iterrows()]
     st.markdown(_top_lista_html(_filas, COLOR_DANGER), unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────
-# COMPARATIVO ENTRE SUPERVISORES
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#38BDF8'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(56,189,248,0.20),rgba(56,189,248,0.06))'>🧭</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Comparativo entre Supervisores</div>
-        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil.</div>
-    </div>
-    <span class='sec-tag' style='background:#38BDF8'>Distribución</span>
-</div>
-""", unsafe_allow_html=True)
-st.plotly_chart(_fig_cuartil_supervisor(tabla_mes), width="stretch", config={"displayModeBar": False})
-
-# ─────────────────────────────────────────────
-# INSUMO VS. CONVERSIÓN
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:#F43F5E'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(244,63,94,0.20),rgba(244,63,94,0.06))'>🎯</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Insumo vs. Conversión</div>
-        <div class='sec-desc'>Qué porcentaje de los leads asignados a cada asesor terminó en matrícula — mide eficiencia, no solo volumen.</div>
-    </div>
-    <span class='sec-tag' style='background:#F43F5E'>Matrículas ÷ Insumo</span>
-</div>
-""", unsafe_allow_html=True)
-
-_MIN_INSUMO_CONVERSION = 30
-_con_insumo = tabla_mes[tabla_mes["INSUMO"] >= _MIN_INSUMO_CONVERSION]
-if len(_con_insumo):
-    st.plotly_chart(_fig_conversion(tabla_mes, min_insumo=_MIN_INSUMO_CONVERSION), width="stretch", config={"displayModeBar": False})
-    st.caption(f"Sólo asesores con al menos {_MIN_INSUMO_CONVERSION} leads recibidos en el mes (para que el % no sea ruido de muestras muy chicas). Top 15 por conversión.")
-else:
-    st.caption("Sin insumo (leads) suficiente este mes para calcular conversión — revisa que la hoja de Leads tenga la Cedula de estos asesores.")
 
