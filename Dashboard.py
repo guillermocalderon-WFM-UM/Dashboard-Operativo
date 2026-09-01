@@ -22,7 +22,8 @@ _SESION_MAX_SEG = 60 * 60  # 1 hora
 #                               (o pertenecer a un dominio permitido).
 # ─────────────────────────────────────────────
 _APP_NOMBRE = "Dashboard Operativo"
-_ACCENT = "#0EA5E9"
+# Acento de la pantalla de acceso: MISMO en las dos apps para que los login se vean idénticos.
+_ACCENT = "#38BDF8"
 _LOGIN_EYEBROW = "Scala Learning · Uniminuto · 2026"
 
 _G_SVG = (
