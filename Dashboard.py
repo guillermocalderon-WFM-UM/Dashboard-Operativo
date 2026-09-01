@@ -22,8 +22,9 @@ _SESION_MAX_SEG = 60 * 60  # 1 hora
 #                               (o pertenecer a un dominio permitido).
 # ─────────────────────────────────────────────
 _APP_NOMBRE = "Dashboard Operativo"
-# Acento de la pantalla de acceso: MISMO en las dos apps para que los login se vean idénticos.
-_ACCENT = "#38BDF8"
+# Pantalla de acceso: cada app usa su propio fondo/acento (igual que su dashboard).
+_ACCENT = "#0EA5E9"
+_LOGIN_BG = "linear-gradient(165deg,#061109 0%,#0a1f17 68%,#071712 100%)"  # verde-teal (Operativo)
 _LOGIN_EYEBROW = "Scala Learning · Uniminuto · 2026"
 
 _G_SVG = (
@@ -47,8 +48,7 @@ def _portada_acceso(cuerpo_html: str) -> None:
       @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&display=swap');
       [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"],
       [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], #MainMenu {{ display:none !important; }}
-      [data-testid="stAppViewContainer"], .stApp {{
-        background:linear-gradient(165deg,#061109 0%,#0a1f17 68%,#071712 100%) !important; }}
+      [data-testid="stAppViewContainer"], .stApp {{ background:{_LOGIN_BG} !important; }}
       [data-testid="stAppViewContainer"]::before {{
         content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
         background:radial-gradient(360px 360px at 82% 14%, {_ACCENT}30, transparent 70%); }}
