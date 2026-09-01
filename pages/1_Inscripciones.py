@@ -1,24 +1,13 @@
 import base64
 import calendar
 import io
-import urllib.parse
 from datetime import date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Hojas de Google Sheets (compartidas como "Cualquiera con el enlace: Lector").
-# Base y Metas viven en archivos de Sheets separados.
-_SHEET_ID = "14DOLvF_d-qhd-VBE62M6hnfqtOH3EYcggjBLgwHiC8w"
-_SHEET_ID_METAS = "1byJ5Sw_P_xKew5xMbWz9KQSTQfc_J-Fm"
-
-
-def _url_hoja(sheet_id: str, nombre_hoja: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(nombre_hoja)}"
-    )
+import _datos
 
 # ─────────────────────────────────────────────
 # COLORES (mismo esquema que Dashboard WFM, primario en verde esmeralda)
@@ -75,18 +64,8 @@ def df_descarga(df, nombre_archivo, **kwargs):
 # ─────────────────────────────────────────────
 # CARGA DE DATOS
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_base() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID, "Base"))
-    df.columns = df.columns.str.strip()
-    return df
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cargar_metas() -> pd.DataFrame:
-    df = pd.read_csv(_url_hoja(_SHEET_ID_METAS, "Consolidado"))
-    df.columns = df.columns.str.strip()
-    return df
+_cargar_base = _datos.inscripciones
+_cargar_metas = _datos.metas
 
 
 # Festivos oficiales de Colombia 2026 (incluye Ley Emiliani: se trasladan al lunes siguiente).
@@ -173,11 +152,19 @@ _ORDEN_AVANCE = [
 _FALTAN_IDX = {2, 5, 8}  # posiciones de las columnas "Faltan" dentro de _ORDEN_AVANCE
 
 
-def _fila_avance_html(supervisor: str, valores: list[int], es_total: bool = False) -> str:
+def _fila_avance_html(supervisor: str, valores: list[int], faltan_max: dict[int, int], es_total: bool = False) -> str:
     tds = [f"<td class='sup-cell'>{supervisor}</td>"]
     for i, v in enumerate(valores):
-        cls = " class='faltan-cell'" if i in _FALTAN_IDX else ""
-        tds.append(f"<td{cls}>{int(v)}</td>")
+        v_int = int(v)
+        if i in _FALTAN_IDX:
+            max_v = faltan_max.get(i, 0)
+            if v_int and max_v:
+                alpha = min(v_int / max_v, 1) * 0.55 + 0.05
+                tds.append(f"<td style='background:rgba(239,68,68,{alpha:.2f})'>{v_int}</td>")
+            else:
+                tds.append(f"<td style='color:rgba(255,255,255,0.35)'>{v_int}</td>")
+        else:
+            tds.append(f"<td>{v_int}</td>")
     real_completas, real_total = valores[0], valores[6]
     pct = (real_completas / real_total * 100) if real_total else 0
     color = COLOR_SUCCESS if pct >= _META_CUMPLIMIENTO else COLOR_DANGER
@@ -192,21 +179,28 @@ def _fila_avance_html(supervisor: str, valores: list[int], es_total: bool = Fals
 
 
 def _render_tabla_avance(tabla: pd.DataFrame, total_general: pd.Series):
+    faltan_max = {
+        2: int(tabla["FALTAN_COMPLETAS"].max()) if len(tabla) else 0,
+        5: int(tabla["FALTAN_INCOMPLETAS"].max()) if len(tabla) else 0,
+        8: int(tabla["FALTAN_TOTAL"].max()) if len(tabla) else 0,
+    }
     rows_html = "".join(
-        _fila_avance_html(sup, [tabla.loc[sup, c] for c in _ORDEN_AVANCE])
+        _fila_avance_html(sup, [tabla.loc[sup, c] for c in _ORDEN_AVANCE], faltan_max)
         for sup in tabla.index
     )
     rows_html += _fila_avance_html(
-        "Total general", [total_general[c] for c in _ORDEN_AVANCE], es_total=True
+        "Total general", [total_general[c] for c in _ORDEN_AVANCE], faltan_max, es_total=True
     )
     table_html = (
         "<div class='avance-tabla-wrap'><table class='avance-tabla'><thead>"
-        "<tr><th rowspan='2'>Supervisor</th>"
-        "<th colspan='3'>Completas</th><th colspan='3'>Incompletas</th><th colspan='3'>Total</th>"
-        f"<th rowspan='2'>Cumplimiento<br><span class='cumpl-hdr-sub'>Meta {_META_CUMPLIMIENTO}%</span></th></tr>"
-        "<tr><th>Real</th><th>Meta</th><th>Faltan</th>"
-        "<th>Real</th><th>Meta</th><th>Faltan</th>"
-        "<th>Real</th><th>Meta</th><th>Faltan</th></tr>"
+        "<tr><th class='grp-sup' rowspan='2'>Supervisor</th>"
+        "<th class='grp-completas' colspan='3'>Completas</th>"
+        "<th class='grp-incompletas' colspan='3'>Incompletas</th>"
+        "<th class='grp-total' colspan='3'>Total</th>"
+        f"<th class='grp-cumpl' rowspan='2'>Cumplimiento<br><span class='cumpl-hdr-sub'>Meta {_META_CUMPLIMIENTO}%</span></th></tr>"
+        "<tr><th class='grp-completas'>Real</th><th class='grp-completas'>Meta</th><th class='grp-completas'>Faltan</th>"
+        "<th class='grp-incompletas'>Real</th><th class='grp-incompletas'>Meta</th><th class='grp-incompletas'>Faltan</th>"
+        "<th class='grp-total'>Real</th><th class='grp-total'>Meta</th><th class='grp-total'>Faltan</th></tr>"
         "</thead><tbody>"
         f"{rows_html}"
         "</tbody></table></div>"
@@ -566,6 +560,9 @@ with st.sidebar:
     mes_valores = [m for m in _MES_ORDEN if m in mes_presentes] + sorted(m for m in mes_presentes if m not in _MES_ORDEN)
     mes_sel = st.selectbox("Mes", ["Todos"] + mes_valores)
 
+    coordinadores = ["Todos"] + sorted(base_full["COORDINADOR"].dropna().unique().tolist())
+    coord_sel = st.selectbox("Coordinador", coordinadores)
+
     supervisores = ["Todos"] + sorted(_base_con_sup["_SUPERVISOR"].unique().tolist())
     sup_sel = st.selectbox("Supervisor", supervisores)
 
@@ -593,6 +590,8 @@ with st.sidebar:
         <div class='sbf-credit'><span class='sbf-spark'>⚡</span>Desarrollado por Workforce Management</div>
     </div>
     """, unsafe_allow_html=True)
+
+_datos.boton_actualizar()
 
 # ─────────────────────────────────────────────
 # CSS
@@ -782,18 +781,22 @@ st.markdown(f"""
     .avance-tabla {{ width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap; }}
     .avance-tabla th, .avance-tabla td {{ text-align:center;padding:4px 8px; }}
     .avance-tabla thead th {{ position:sticky;top:0;z-index:1;
-        background:#0F2318;color:rgba(255,255,255,0.94);
-        font-weight:600;border-bottom:2px solid rgba(52,211,153,0.45); }}
+        color:rgba(255,255,255,0.94);font-weight:600;
+        border-bottom:1px solid rgba(255,255,255,0.10); }}
+    .avance-tabla thead th.grp-sup {{ background:#10231B;text-align:left; }}
+    .avance-tabla thead th.grp-completas {{ background:linear-gradient(180deg, rgba(16,185,129,0.22), rgba(16,185,129,0.08)); }}
+    .avance-tabla thead th.grp-incompletas {{ background:linear-gradient(180deg, rgba(245,158,11,0.20), rgba(245,158,11,0.07)); }}
+    .avance-tabla thead th.grp-total {{ background:#182420; }}
+    .avance-tabla thead th.grp-cumpl {{ background:linear-gradient(180deg, rgba(14,165,233,0.22), rgba(14,165,233,0.08)); }}
     .avance-tabla thead tr:first-child th {{ font-size:10px;letter-spacing:0.01em;top:0; }}
     .avance-tabla thead tr:last-child th {{ font-size:8.5px;font-weight:600;color:rgba(255,255,255,0.55);
-        padding-top:3px;padding-bottom:5px;top:23px;border-bottom:1px solid rgba(255,255,255,0.08); }}
+        padding-top:3px;padding-bottom:5px;top:23px; }}
     .cumpl-hdr-sub {{ display:block;font-size:7.5px;font-weight:500;color:rgba(255,255,255,0.45);margin-top:2px;
         letter-spacing:0.04em;text-transform:none; }}
     .avance-tabla tbody td {{ color:rgba(225,232,250,0.92);border-bottom:1px solid rgba(255,255,255,0.045); }}
     .avance-tabla tbody tr:nth-child(odd) {{ background:rgba(10,24,18,0.45); }}
     .avance-tabla tbody tr:hover {{ background:rgba(14,165,233,0.09); }}
-    .avance-tabla td.sup-cell {{ font-weight:700;color:white; }}
-    .avance-tabla td.faltan-cell {{ background:rgba(245,158,11,0.14); }}
+    .avance-tabla td.sup-cell {{ font-weight:700;color:white;text-align:left; }}
     .avance-tabla tr.total-row td {{ font-weight:800!important;background:rgba(52,211,153,0.16)!important; }}
     .cumpl-cell {{ min-width:130px; }}
     .cumpl-wrap {{ display:flex;align-items:center;gap:7px;justify-content:center; }}
@@ -911,11 +914,15 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 b = _base_con_sup.copy()
 _fecha_insc = pd.to_datetime(b["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
-mask = (_fecha_insc >= fecha_ini) & (_fecha_insc <= fecha_fin)
+# Se ocultan las inscripciones sin supervisor asignado: así los KPIs y todo el módulo
+# cuadran con la tabla "Avance vs Meta" (que ya agrupa solo por supervisor).
+mask = (_fecha_insc >= fecha_ini) & (_fecha_insc <= fecha_fin) & b["SUPERVISOR"].notna()
 if cohorte_sel != "Todos":
     mask &= b["COHORTE"] == cohorte_sel
 if mes_sel != "Todos":
     mask &= b["MES"] == mes_sel
+if coord_sel != "Todos":
+    mask &= b["COORDINADOR"] == coord_sel
 if sup_sel != "Todos":
     mask &= b["_SUPERVISOR"] == sup_sel
 if nivel_sel != "Todos":
@@ -931,6 +938,8 @@ if cohorte_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COHORTE"] == cohorte_sel]
 if mes_sel != "Todos":
     _base_avance = _base_avance[_base_avance["MES"] == mes_sel]
+if coord_sel != "Todos":
+    _base_avance = _base_avance[_base_avance["COORDINADOR"] == coord_sel]
 _fecha_insc_avance = pd.to_datetime(_base_avance["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
 _base_avance = _base_avance[(_fecha_insc_avance >= fecha_ini) & (_fecha_insc_avance <= fecha_fin)]
 tabla, total_general = _tabla_avance(_base_avance, metas_full, fecha_ini, fecha_fin)
@@ -943,7 +952,7 @@ pendientes_doc = int((b[b["CRUCE COMPL"] == 0][_DOC_COLS].isin(_DOC_PENDIENTE)).
 _home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
-_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Contactabilidad", icon="📞")
+_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
 
 # ─────────────────────────────────────────────
 # ENCABEZADO
@@ -959,7 +968,7 @@ with st.container(key="hdrbanner"):
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.6, 1.2], vertical_alignment="center")
+    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
     with nb1:
         if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
             st.switch_page(_home_pg)
@@ -972,7 +981,7 @@ with st.container(key="hdrbanner"):
         if st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch"):
             st.switch_page(_cuart_pg)
     with nb5:
-        if st.button("📞 Contactabilidad", key="hdr_cont", width="stretch"):
+        if st.button("📞 Real time", key="hdr_cont", width="stretch"):
             st.switch_page(_cont_pg)
 
 # ─────────────────────────────────────────────
@@ -1248,7 +1257,17 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 cols_detalle = [c for c in [
-    "NOMBRE", "PROGRAMA", "NIVEL", "STATUS_INSCRIPCION", "CRUCE COMPL",
-    "VENDEDOR INICIAL", "NOMBRE AGENT", "_SUPERVISOR", "FECHA_INSCRIPCION",
+    "NOMBRE", "CAMPUS", "PROGRAMA", "NIVEL", "COHORTE", "STATUS_INSCRIPCION", "CRUCE COMPL",
+    "VENDEDOR INICIAL", "NOMBRE AGENT", "_SUPERVISOR", "COORDINADOR",
+    "FECHA_INSCRIPCION", "FECHA_DOCUMENTAL_COMPLETADA", "CERTIFICACIÓN",
 ] if c in b.columns]
+
+st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
+    <span class='tbl-hdr-icon'>📑</span>
+    <div class='tbl-hdr-body'>
+        <div class='tbl-hdr-title'>Listado de Casos</div>
+        <div class='tbl-hdr-desc'>Registros individuales — cohorte y período seleccionados</div>
+    </div>
+    <span class='tbl-hdr-badge'>{total_insc} casos</span>
+</div>""", unsafe_allow_html=True)
 df_descarga(b[cols_detalle].rename(columns={"_SUPERVISOR": "SUPERVISOR"}), "inscripciones_detalle.xlsx", width="stretch", hide_index=True, height=360)

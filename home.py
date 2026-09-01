@@ -1,6 +1,8 @@
 import streamlit as st
 import base64
 
+import _datos
+
 COLOR_PRIMARY = "#28053F"
 COLOR_ACCENT  = "#0EA5E9"
 
@@ -8,41 +10,40 @@ COLOR_ACCENT  = "#0EA5E9"
 insc_pg  = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
 mat_pg   = st.Page("pages/2_Matriculas.py",    title="Matrículas",    icon="🎓")
 cuart_pg = st.Page("pages/3_Cuartiles.py",     title="Cuartiles",     icon="🏆")
-cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Contactabilidad", icon="📞")
+cont_pg  = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
 
 _MODULOS = {
     "insc": dict(
-        icon="📝", title="Inscripciones", status="ok", status_label="Disponible", progress=100,
-        desc="Seguimiento del embudo de inscripción: de prospecto a inscripción completa, por asesor, programa y período.",
+        icon="📝", title="Inscripciones", page=insc_pg, tag="Comercial · embudo",
+        desc="Embudo de inscripción, de prospecto a inscripción completa, por asesor, programa y período.",
         feats=["Embudo completo", "Ranking vs. meta", "Estado documental"],
-        stats=[("🧭", "6", "Filtros activos"), ("📊", "6", "Gráficas y tablas"), ("⚡", "5 min", "Refresco de datos")],
         ac1="#0EA5E9", ac2="#6366F1",
-        icobg="linear-gradient(135deg,rgba(14,165,233,0.22),rgba(99,102,241,0.10))",
-        acbord="rgba(56,189,248,0.45)", page=insc_pg, cta="Abrir módulo →",
+        icobg="linear-gradient(135deg,rgba(14,165,233,0.28),rgba(99,102,241,0.12))",
+        acbord="rgba(56,189,248,0.5)",
     ),
     "mat": dict(
-        icon="🎓", title="Matrículas", status="wip", status_label="Próximamente", progress=40,
-        desc="Seguimiento del proceso de matrícula: período, paquete inscrito y estatus del alumno, una vez completada la inscripción.",
-        feats=["Por período y programa", "Tipo de admisión", "Seguimiento financiero"],
+        icon="🎓", title="Matrículas", page=mat_pg, tag="Comercial · matrícula",
+        desc="Proceso de matrícula: período, paquete inscrito y estatus del alumno una vez completada la inscripción.",
+        feats=["Avance vs. meta por supervisor", "Financiación y tipo de admisión", "Tendencia diaria"],
         ac1="#8B5CF6", ac2="#EC4899",
-        icobg="linear-gradient(135deg,rgba(139,92,246,0.22),rgba(236,72,153,0.10))",
-        acbord="rgba(167,139,250,0.45)", page=mat_pg, cta="Ver avance →",
+        icobg="linear-gradient(135deg,rgba(139,92,246,0.28),rgba(236,72,153,0.12))",
+        acbord="rgba(167,139,250,0.5)",
     ),
     "cuart": dict(
-        icon="🏆", title="Cuartiles", status="wip", status_label="Próximamente", progress=20,
-        desc="Clasificación de asesores por desempeño en cuartiles, para identificar a los mejores y a quiénes necesitan refuerzo.",
-        feats=["Ranking por cuartil", "Comparativo entre supervisores", "Evolución histórica"],
+        icon="🏆", title="Cuartiles", page=cuart_pg, tag="Desempeño de asesores",
+        desc="Clasificación de asesores por desempeño en cuartiles, para reconocer a los mejores y reforzar a quienes lo necesitan.",
+        feats=["Umbrales real vs. propuesto", "Ranking por cuartil", "Evolución de 6 meses"],
         ac1="#34D399", ac2="#059669",
-        icobg="linear-gradient(135deg,rgba(52,211,153,0.22),rgba(5,150,105,0.10))",
-        acbord="rgba(52,211,153,0.45)", page=cuart_pg, cta="Ver avance →",
+        icobg="linear-gradient(135deg,rgba(52,211,153,0.28),rgba(5,150,105,0.12))",
+        acbord="rgba(52,211,153,0.5)",
     ),
     "cont": dict(
-        icon="📞", title="Contactabilidad", status="wip", status_label="En desarrollo", progress=10,
-        desc="Efectividad de contacto por asesor: intentos por lead, tasa de contacto efectivo y las franjas horarias con mejor respuesta.",
-        feats=["Tasa de contacto", "Intentos por lead", "Franja horaria óptima"],
+        icon="📞", title="Real time", page=cont_pg, tag="Contacto en vivo",
+        desc="Gestión de llamadas en tiempo real y cierre del día vencido: disposiciones, contacto efectivo, ritmo por hora y alertas.",
+        feats=["Llamadas por hora", "Disposición por asesor", "Alertas del día"],
         ac1="#F97316", ac2="#F59E0B",
-        icobg="linear-gradient(135deg,rgba(249,115,22,0.22),rgba(245,158,11,0.10))",
-        acbord="rgba(249,115,22,0.45)", page=cont_pg, cta="Ver avance →",
+        icobg="linear-gradient(135deg,rgba(249,115,22,0.28),rgba(245,158,11,0.12))",
+        acbord="rgba(249,115,22,0.5)",
     ),
 }
 
@@ -96,43 +97,32 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+_datos.boton_actualizar()
+
 # ── CSS ──────────────────────────────────
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap');
     * {{ font-family: 'Inter', sans-serif !important; }}
-    /* restaurar la fuente de íconos Material (si no, sale el texto "keyboard_double_arrow_left") */
     span[data-testid="stIconMaterial"],
     [data-testid="stSidebarCollapseButton"] span,
     [data-testid="collapsedControl"] span,
     .material-symbols-rounded, .material-symbols-outlined, .material-icons {{
         font-family: 'Material Symbols Rounded','Material Symbols Outlined','Material Icons' !important;
     }}
+    [data-testid="stSidebarNav"] {{ display:none !important; }}
 
-    /* ══ FONDO GENERAL OSCURO + AURORA ══ */
+    /* ══ FONDO GENERAL — plano, con un halo mínimo (sin dot-grid ni aurora) ══ */
     [data-testid="stAppViewContainer"] {{
         background:
-            radial-gradient(ellipse 110% 70% at 8% -10%,  rgba(14,165,233,0.15) 0%, transparent 60%),
-            radial-gradient(ellipse 100% 65% at 100% 0%,  rgba(99,102,241,0.15) 0%, transparent 60%),
-            radial-gradient(ellipse 90% 70% at 85% 105%,  rgba(52,211,153,0.08) 0%, transparent 60%),
-            radial-gradient(ellipse 80% 60% at 0% 100%,   rgba(99,102,241,0.07) 0%, transparent 60%),
-            linear-gradient(160deg, #071310 0%, #082017 45%, #050F0B 100%);
+            radial-gradient(ellipse 100% 55% at 6% -12%,  rgba(14,165,233,0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 90% 55% at 100% -6%,   rgba(99,102,241,0.09) 0%, transparent 60%),
+            linear-gradient(160deg, #071310 0%, #082017 48%, #050F0B 100%);
         background-attachment: fixed;
     }}
     [data-testid="stHeader"] {{ background: transparent !important; }}
-    .block-container {{ padding-top: 1.5rem; padding-bottom: 3rem; max-width: 1180px; }}
+    .block-container {{ padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1200px; }}
 
-    /* malla de puntos sutil sobre el fondo */
-    [data-testid="stAppViewContainer"]::before {{
-        content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
-        background-image: radial-gradient(circle, rgba(255,255,255,0.035) 1px, transparent 1px);
-        background-size: 34px 34px;
-        mask-image: radial-gradient(ellipse 80% 80% at 50% 30%, black 0%, transparent 75%);
-        -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 30%, black 0%, transparent 75%);
-    }}
-    [data-testid="stAppViewContainer"] > .main {{ position: relative; z-index: 1; }}
-
-    /* botón para colapsar el sidebar: ícono limpio, sin texto crudo */
     [data-testid="stSidebarCollapseButton"] button,
     div[data-testid="collapsedControl"] button {{
         background:rgba(255,255,255,0.06)!important;border:1px solid rgba(255,255,255,0.10)!important;
@@ -145,7 +135,7 @@ st.markdown(f"""
     div[data-testid="stSidebarContent"] {{ width:100%!important;box-sizing:border-box!important;padding-right:0.75rem!important; }}
     div[data-testid="stSidebarContent"] > div {{ width:100%!important; }}
 
-    /* ══ SIDEBAR · mismo fondo de diseño que el hero (sin grid) ══ */
+    /* ══ SIDEBAR ══ */
     section[data-testid="stSidebar"] > div:first-child {{
         background:
             radial-gradient(ellipse 95% 42% at 8% 0%,    rgba(14,165,233,0.30) 0%, transparent 55%),
@@ -155,11 +145,8 @@ st.markdown(f"""
         border-right: 1px solid rgba(255,255,255,0.07);
     }}
     div[data-testid="stSidebarContent"] * {{ color: white !important; }}
-
-    /* ══ Scala bien arriba + footer pegado al fondo del sidebar ══ */
     [data-testid="stSidebarHeader"] {{ padding-top:0.1rem!important; padding-bottom:0!important; min-height:0!important; }}
     section[data-testid="stSidebar"] .block-container {{ padding-top:0.5rem!important; padding-bottom:0.8rem!important; }}
-    /* toda la cadena del sidebar a altura completa para poder anclar abajo */
     section[data-testid="stSidebar"] > div:first-child,
     [data-testid="stSidebarContent"] {{
         display:flex!important; flex-direction:column!important; min-height:100vh!important; }}
@@ -172,19 +159,97 @@ st.markdown(f"""
     [data-testid="stSidebarUserContent"] [data-testid="stElementContainer"]:last-of-type {{
         margin-top:auto!important; margin-bottom:32px!important; }}
 
-    /* ══ ANIMATIONS ══ */
     @keyframes sbcBar {{ 0% {{ background-position:0% 0%; }} 100% {{ background-position:200% 0%; }} }}
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
-    @keyframes float {{ 0%,100% {{ transform:translateY(0px); }} 50% {{ transform:translateY(-9px); }} }}
-    @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(28px); }} to {{ opacity:1; transform:translateY(0); }} }}
+    @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(14px); }} to {{ opacity:1; transform:translateY(0); }} }}
+    @keyframes ring {{ 0% {{ transform:scale(.85); opacity:.55; }} 100% {{ transform:scale(1.7); opacity:0; }} }}
     @keyframes shimmer {{ 0% {{ background-position:-200% 0; }} 100% {{ background-position:200% 0; }} }}
     @keyframes auroraMove {{
-        0%   {{ transform:translate(0,0) scale(1);        }}
-        33%  {{ transform:translate(40px,-30px) scale(1.15); }}
-        66%  {{ transform:translate(-30px,25px) scale(0.92); }}
-        100% {{ transform:translate(0,0) scale(1);        }}
-    }}
-    @keyframes ring {{ 0% {{ transform:scale(.85); opacity:.55; }} 100% {{ transform:scale(1.7); opacity:0; }} }}
+        0%   {{ transform:translate(0,0) scale(1); }}
+        33%  {{ transform:translate(36px,-26px) scale(1.12); }}
+        66%  {{ transform:translate(-26px,22px) scale(0.93); }}
+        100% {{ transform:translate(0,0) scale(1); }} }}
+    @keyframes nticker {{ 0% {{ transform:translateX(0); }} 100% {{ transform:translateX(-50%); }} }}
+    @media (prefers-reduced-motion:reduce) {{
+        .hero-aurora, .nticker-inner, .hero-title .grad {{ animation:none !important; }} }}
+
+    /* ══════════ HERO ══════════ */
+    .hero {{ position:relative;border-radius:26px;overflow:hidden;padding:32px 48px 28px;text-align:center;margin-bottom:16px;
+        background:linear-gradient(135deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
+        border:1px solid rgba(255,255,255,0.11);
+        box-shadow:0 28px 80px -30px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.10);
+        animation:fadeUp 0.6s ease both; }}
+    .hero-aurora {{ position:absolute;border-radius:50%;filter:blur(54px);pointer-events:none;z-index:0; }}
+    .ha1 {{ width:400px;height:400px;background:radial-gradient(circle,rgba(14,165,233,0.42),transparent 65%);top:-160px;left:-110px;animation:auroraMove 16s ease-in-out infinite; }}
+    .ha2 {{ width:360px;height:360px;background:radial-gradient(circle,rgba(129,140,248,0.40),transparent 65%);bottom:-170px;right:-80px;animation:auroraMove 20s ease-in-out infinite reverse; }}
+    .ha3 {{ width:250px;height:250px;background:radial-gradient(circle,rgba(52,211,153,0.28),transparent 65%);top:22%;right:14%;animation:auroraMove 24s ease-in-out infinite; }}
+    .hero-inner {{ position:relative;z-index:1; }}
+    .hero-badge {{ display:inline-flex;align-items:center;gap:9px;background:rgba(52,211,153,0.08);
+        border:1px solid rgba(52,211,153,0.28);border-radius:99px;padding:7px 20px;margin-bottom:22px;
+        font-size:10px;font-weight:700;color:rgba(255,255,255,0.80);letter-spacing:0.14em;text-transform:uppercase; }}
+    .hero-badge-dot {{ position:relative;width:8px;height:8px; }}
+    .hero-badge-dot::after {{ content:'';position:absolute;inset:0;border-radius:50%;background:#34D399; }}
+    .hero-badge-dot::before {{ content:'';position:absolute;inset:0;border-radius:50%;border:2px solid #34D399;animation:ring 1.8s ease-out infinite; }}
+    .hero-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:42px;font-weight:800;color:white;
+        margin:0 0 12px;letter-spacing:-1.6px;line-height:1.04; }}
+    .hero-title .grad {{ background:linear-gradient(90deg,#38BDF8 0%,#818CF8 35%,#34D399 70%,#38BDF8 100%);
+        background-size:220% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;animation:shimmer 5s linear infinite; }}
+    .hero-sub {{ font-size:14.5px;color:rgba(255,255,255,0.60);max-width:560px;margin:0 auto;line-height:1.66; }}
+    .hero-divider {{ width:52px;height:1.5px;margin:20px auto 18px;border-radius:2px;
+        background:linear-gradient(90deg,transparent,rgba(56,189,248,0.55),rgba(129,140,248,0.55),transparent); }}
+    .hero-cards {{ display:flex;justify-content:center;gap:10px;flex-wrap:wrap; }}
+    .hcard {{ display:flex;align-items:center;gap:12px;min-width:150px;background:rgba(255,255,255,0.05);
+        border:1px solid rgba(255,255,255,0.09);border-top:2px solid var(--hc,rgba(56,189,248,0.50));
+        border-radius:15px;padding:13px 18px;
+        box-shadow:0 8px 26px -12px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.06);
+        transition:transform .22s cubic-bezier(.2,.8,.2,1),background .22s ease; }}
+    .hcard:hover {{ transform:translateY(-4px);background:rgba(255,255,255,0.09); }}
+    .hcard-ico {{ width:42px;height:42px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+        font-size:19px;background:var(--hc-bg,rgba(56,189,248,0.12));border:1px solid var(--hc,rgba(56,189,248,0.22)); }}
+    .hcard-txt {{ text-align:left; }}
+    .hcard-lbl {{ font-size:8.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+        color:var(--hc,rgba(56,189,248,0.80));margin-bottom:4px;display:block; }}
+    .hcard-val {{ font-size:14.5px;font-weight:800;color:white;line-height:1;display:block; }}
+    .hcard-val .dot {{ display:inline-block;width:7px;height:7px;border-radius:50%;background:#34D399;
+        box-shadow:0 0 10px #34D399;margin-right:6px;animation:sbcPulse 1.8s ease-in-out infinite; }}
+
+    /* ══ TICKER ══ */
+    .nticker-shell {{ display:flex;align-items:stretch;overflow:hidden;border-radius:14px;
+        background:rgba(245,158,11,0.04);border:1px solid rgba(245,158,11,0.22);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,0.05);margin:0 0 6px; }}
+    .nticker-label {{ flex-shrink:0;display:flex;align-items:center;gap:8px;padding:11px 17px;
+        font-size:8.5px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#F59E0B;
+        background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(245,158,11,0.08));
+        border-right:1px solid rgba(245,158,11,0.22); }}
+    .nticker-dot {{ width:7px;height:7px;border-radius:50%;background:#F59E0B;box-shadow:0 0 8px #F59E0B;
+        animation:sbcPulse 1.8s ease-in-out infinite;flex-shrink:0; }}
+    .nticker-track {{ overflow:hidden;flex:1;
+        mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%);
+        -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%); }}
+    .nticker-inner {{ display:flex;width:max-content;animation:nticker 40s linear infinite;padding:11px 0; }}
+    .nticker-inner:hover {{ animation-play-state:paused; }}
+    .nticker-item {{ display:flex;align-items:center;gap:10px;padding:0 44px;white-space:nowrap;
+        font-size:12.5px;color:rgba(255,255,255,0.66);font-weight:500; }}
+    .nticker-sep {{ color:rgba(245,158,11,0.35);font-size:17px;margin-left:6px; }}
+    .ntag {{ font-size:8px;font-weight:800;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:0.09em;flex-shrink:0; }}
+    .ntag-u {{ background:rgba(14,165,233,0.18);color:#38BDF8;border:1px solid rgba(14,165,233,0.28); }}
+    .ntag-n {{ background:rgba(52,211,153,0.18);color:#34D399;border:1px solid rgba(52,211,153,0.28); }}
+    .ntag-p {{ background:rgba(245,158,11,0.18);color:#FCD34D;border:1px solid rgba(245,158,11,0.28); }}
+
+    /* ══ STATS (pie) ══ */
+    .stats {{ display:flex;gap:14px;margin-top:34px;animation:fadeUp .8s ease both; }}
+    .stat {{ flex:1;position:relative;overflow:hidden;border-radius:18px;padding:22px 16px 20px;text-align:center;
+        background:linear-gradient(160deg,rgba(255,255,255,0.055),rgba(255,255,255,0.015));
+        border:1px solid rgba(255,255,255,0.09);
+        box-shadow:0 12px 30px -16px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.05);
+        transition:transform .22s ease,border-color .22s ease; }}
+    .stat:hover {{ transform:translateY(-4px);border-color:var(--sc); }}
+    .stat::after {{ content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+        width:58%;height:2px;background:var(--sc);border-radius:2px;opacity:.75; }}
+    .stat-ico {{ font-size:17px;margin-bottom:8px;opacity:.9; }}
+    .stat-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:27px;font-weight:700;color:white;line-height:1;margin-bottom:6px; }}
+    .stat-lbl {{ font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.42);text-transform:uppercase;letter-spacing:0.10em; }}
 
     /* ══ BRAND CARD (sidebar) ══ */
     .sbc {{ position:relative;border-radius:20px;overflow:hidden;margin:-18px 0 20px;padding:20px 18px 18px;
@@ -235,352 +300,118 @@ st.markdown(f"""
         color:rgba(255,255,255,0.30)!important;text-align:center;letter-spacing:0.06em; }}
     .sbf-spark {{ font-size:10px; }}
 
-    /* ══════════ HERO ══════════ */
-    .hero {{
-        position:relative; border-radius:28px; overflow:hidden;
-        padding:34px 50px 30px; text-align:center; margin-bottom:20px;
-        background:
-            linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
-        border:1px solid rgba(255,255,255,0.11);
-        box-shadow:0 32px 90px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.12);
-        backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-        animation:fadeUp 0.7s ease both;
-    }}
-    .hero-aurora {{ position:absolute; border-radius:50%; filter:blur(52px); pointer-events:none; z-index:0; }}
-    .ha1 {{ width:420px;height:420px;background:radial-gradient(circle,rgba(14,165,233,0.52),transparent 65%);top:-160px;left:-110px;animation:auroraMove 14s ease-in-out infinite; }}
-    .ha2 {{ width:380px;height:380px;background:radial-gradient(circle,rgba(129,140,248,0.48),transparent 65%);bottom:-170px;right:-80px;animation:auroraMove 18s ease-in-out infinite reverse; }}
-    .ha3 {{ width:280px;height:280px;background:radial-gradient(circle,rgba(52,211,153,0.35),transparent 65%);top:25%;right:15%;animation:auroraMove 22s ease-in-out infinite; }}
-    .ha4 {{ width:220px;height:220px;background:radial-gradient(circle,rgba(245,158,11,0.28),transparent 65%);bottom:-80px;left:10%;animation:auroraMove 26s ease-in-out infinite reverse; }}
-    .hero::before {{
-        content:''; position:absolute; inset:0; z-index:0;
-        background-image:linear-gradient(rgba(255,255,255,0.045) 1px,transparent 1px),
-                         linear-gradient(90deg,rgba(255,255,255,0.045) 1px,transparent 1px);
-        background-size:44px 44px;
-        mask-image:radial-gradient(ellipse 75% 75% at 50% 40%,black,transparent 82%);
-        -webkit-mask-image:radial-gradient(ellipse 75% 75% at 50% 40%,black,transparent 82%);
-    }}
-    .hero-inner {{ position:relative; z-index:1; }}
-    .hero-badge {{ display:inline-flex;align-items:center;gap:9px;
-        background:rgba(52,211,153,0.08);
-        border:1px solid rgba(52,211,153,0.28);
-        border-radius:99px;padding:7px 20px;margin-bottom:28px;
-        font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.82);
-        letter-spacing:0.14em;text-transform:uppercase;
-        box-shadow:0 4px 22px rgba(0,0,0,0.28), 0 0 18px -6px rgba(52,211,153,0.30); }}
-    .hero-badge-dot {{ position:relative;width:8px;height:8px; }}
-    .hero-badge-dot::after {{ content:'';position:absolute;inset:0;border-radius:50%;background:#34D399; }}
-    .hero-badge-dot::before {{ content:'';position:absolute;inset:0;border-radius:50%;border:2px solid #34D399;animation:ring 1.8s ease-out infinite; }}
-    .hero-title {{ font-family:'Space Grotesk',sans-serif!important;
-        font-size:44px;font-weight:800;color:white;margin:0 0 12px;
-        letter-spacing:-1.8px;line-height:1.04;text-shadow:0 4px 44px rgba(0,0,0,0.45); }}
-    .hero-title .grad {{ background:linear-gradient(90deg,#38BDF8 0%,#818CF8 35%,#34D399 70%,#38BDF8 100%);
-        background-size:220% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-        background-clip:text;animation:shimmer 4s linear infinite; }}
-    .hero-sub {{ font-size:15px;color:rgba(255,255,255,0.62);max-width:580px;
-        margin:0 auto 0;line-height:1.68;font-weight:400; }}
+    /* ══════════ PORTADA — foco + tira lateral ══════════ */
+    .hm-eyebrow {{ display:flex;align-items:center;gap:11px;margin:26px 0 18px;
+        font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.42); }}
+    .hm-eyebrow::before {{ content:'';width:24px;height:2px;border-radius:2px;background:linear-gradient(90deg,#38BDF8,#818CF8); }}
+    .hm-eyebrow::after {{ content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.12),transparent); }}
 
-    /* ══ SECTION LABEL ══ */
-    .sec-lbl {{ display:flex;align-items:center;gap:12px;margin:38px 0 20px;
-        font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;
-        color:rgba(255,255,255,0.45); }}
-    .sec-lbl::before {{ content:'';width:26px;height:2px;border-radius:2px;
-        background:linear-gradient(90deg,#38BDF8,#818CF8); }}
-    .sec-lbl::after {{ content:'';flex:1;height:1px;
-        background:linear-gradient(90deg,rgba(255,255,255,0.14),transparent); }}
+    /* riel y foco a la misma altura */
+    div[data-testid="stHorizontalBlock"]:has(.st-key-hm_focus_wrap) {{ align-items:stretch; }}
+    div[data-testid="stHorizontalBlock"]:has(.st-key-hm_focus_wrap) > div[data-testid="stColumn"] {{ display:flex;flex-direction:column; }}
+    div[data-testid="stHorizontalBlock"]:has(.st-key-hm_focus_wrap) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {{ flex:1 1 auto;display:flex;flex-direction:column; }}
+    .st-key-hm_focus_wrap {{ flex:1 1 auto;display:flex;flex-direction:column; }}
+    .st-key-hm_focus_wrap [data-testid="stElementContainer"]:first-child {{ flex:1 1 auto;display:flex; }}
 
-    /* ══ MODULE CARDS ══ */
-    .mod {{ position:relative;border-radius:24px;overflow:hidden;
-        padding:34px 30px 26px;display:flex;flex-direction:column;height:100%;
-        background:linear-gradient(160deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
-        border:1px solid rgba(255,255,255,0.10);
-        box-shadow:0 20px 50px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.08);
-        backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-        transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease;
-        animation:fadeUp .8s ease both; }}
-    .mod:hover {{ transform:translateY(-8px);
-        border-color:var(--glow,rgba(255,255,255,0.25));
-        box-shadow:0 32px 70px rgba(0,0,0,0.5),0 0 0 1px var(--glow,transparent),
-                   0 0 50px -8px var(--glow,transparent); }}
-    .mod-glow {{ position:absolute;top:-60px;right:-60px;width:200px;height:200px;border-radius:50%;
-        background:radial-gradient(circle,var(--accent),transparent 70%);opacity:.16;pointer-events:none; }}
-    .mod-head {{ display:flex;align-items:flex-start;justify-content:space-between;
-        position:relative;z-index:1;margin-bottom:18px; }}
-    .mod-ico {{ position:relative;width:64px;height:64px;border-radius:18px;
-        display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;
-        background:var(--icobg);border:1px solid var(--glow,rgba(255,255,255,0.12));
-        animation:float 3.8s ease-in-out infinite;
-        box-shadow:0 10px 30px -6px var(--glow,transparent); }}
-    .mod-badge {{ display:inline-flex;align-items:center;gap:6px;
-        font-size:9.5px;font-weight:800;padding:5px 11px;border-radius:99px;
-        letter-spacing:0.08em;text-transform:uppercase; }}
-    .mod-badge-dot {{ width:6px;height:6px;border-radius:50%; }}
-    .mod-title {{ font-family:'Space Grotesk',sans-serif!important;
-        font-size:25px;font-weight:700;color:white;margin:0 0 9px;
-        letter-spacing:-0.5px;position:relative;z-index:1; }}
-    .mod-desc {{ font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.7;
-        margin:0 0 22px;position:relative;z-index:1; }}
-    .mod-feats {{ display:flex;flex-direction:column;gap:11px;margin-bottom:26px;
-        position:relative;z-index:1; }}
-    .mfeat {{ display:flex;align-items:center;gap:11px;font-size:12.5px;
-        color:rgba(255,255,255,0.72);font-weight:500; }}
-    .mfeat-ck {{ width:19px;height:19px;border-radius:6px;flex-shrink:0;
-        display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;
-        background:var(--icobg);color:var(--accent-solid);border:1px solid var(--glow,rgba(255,255,255,0.12)); }}
-    .mod-div {{ height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);
-        margin:0 0 16px;position:relative;z-index:1; }}
-    .mod-foot {{ display:flex;align-items:flex-end;justify-content:space-between;gap:14px;
-        margin-bottom:22px;position:relative;z-index:1; }}
-    .mod-chips {{ display:flex;flex-direction:column;gap:7px; }}
-    .mchip {{ display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
-        font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:8px;
-        background:var(--icobg);color:rgba(255,255,255,0.82);
-        border:1px solid var(--glow,rgba(255,255,255,0.12)); }}
-    .mchip b {{ color:var(--accent-solid);font-weight:800; }}
-    .mspark {{ display:flex;align-items:flex-end;gap:4px;height:46px;padding:0 2px; }}
-    .mspark span {{ width:7px;border-radius:4px;background:var(--accent);
-        opacity:.55;transform-origin:bottom;transition:transform .4s cubic-bezier(.2,.8,.2,1),opacity .3s ease; }}
-    .mod:hover .mspark span {{ opacity:.95;transform:scaleY(1.18); }}
-
-    /* ══ MÓDULOS · riel + panel ══ */
-    .sel-eyebrow {{ display:flex;align-items:center;gap:8px;margin:0 0 12px 2px;
-        font-size:10px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.38); }}
-    .sel-eyebrow .dot {{ width:6px;height:6px;border-radius:50%;background:#34D399;box-shadow:0 0 8px #34D399;
-        animation:sbcPulse 1.8s ease-in-out infinite; }}
-
-    /* -- tarjetas del riel -- */
-    .rail-card-head {{ display:flex;align-items:center;gap:13px;position:relative;margin-bottom:16px; }}
-    .rail-ico {{ width:44px;height:44px;flex-shrink:0;border-radius:13px;display:flex;align-items:center;justify-content:center;
-        font-size:20px;background:var(--icobg);border:1px solid var(--acbord);
-        box-shadow:0 6px 16px -6px var(--ac1); transition:transform .25s cubic-bezier(.2,.8,.2,1); }}
-    .rail-txt {{ display:flex;flex-direction:column;gap:7px;min-width:0; }}
-    .rail-title {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:15px;color:white;
-        letter-spacing:-0.1px;line-height:1.2; }}
-    .rail-status {{ display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800;
-        padding:3px 9px;border-radius:99px;letter-spacing:0.07em;text-transform:uppercase;align-self:flex-start; }}
-    .rail-status-ok {{ background:rgba(52,211,153,0.14);color:#34D399;border:1px solid rgba(52,211,153,0.30); }}
-    .rail-status-wip {{ background:rgba(245,158,11,0.14);color:#FCD34D;border:1px solid rgba(245,158,11,0.30); }}
-    .rail-status .dot {{ width:5px;height:5px;border-radius:50%;background:currentColor; }}
-    .rail-active-flag {{ display:none; }}
-    .rail-div {{ height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.12),transparent);margin-bottom:2px; }}
-
-    .st-key-railitem_insc, .st-key-railitem_mat, .st-key-railitem_cuart, .st-key-railitem_cont {{
-        position:relative;border-radius:18px;padding:14px 16px 8px;margin-bottom:12px;overflow:hidden;
+    /* -- tira lateral -- */
+    .st-key-hm_rail_insc, .st-key-hm_rail_mat, .st-key-hm_rail_cuart, .st-key-hm_rail_cont {{
+        position:relative;border-radius:16px;padding:15px 16px 13px;margin-bottom:12px;overflow:hidden;
+        min-height:102px;box-sizing:border-box;
+        display:flex;flex-direction:column;
         background:linear-gradient(160deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.015) 100%);
-        border:1px solid rgba(255,255,255,0.09);
-        transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;
+        border:1px solid rgba(255,255,255,0.10);border-left:2px solid var(--ac1);
+        transition:border-color .25s ease,background .25s ease;
     }}
-    .st-key-railitem_insc:hover, .st-key-railitem_mat:hover, .st-key-railitem_cuart:hover, .st-key-railitem_cont:hover {{
-        transform:translateY(-3px);border-color:var(--acbord); }}
-    .st-key-railitem_insc:hover .rail-ico, .st-key-railitem_mat:hover .rail-ico,
-    .st-key-railitem_cuart:hover .rail-ico, .st-key-railitem_cont:hover .rail-ico {{
-        transform:scale(1.08) rotate(-4deg); }}
-    .st-key-railitem_insc:has(.rail-active-flag), .st-key-railitem_mat:has(.rail-active-flag),
-    .st-key-railitem_cuart:has(.rail-active-flag), .st-key-railitem_cont:has(.rail-active-flag) {{
+    .st-key-hm_rail_insc  {{ --ac1:#0EA5E9;--icobg:linear-gradient(135deg,rgba(14,165,233,0.28),rgba(99,102,241,0.12));--acbord:rgba(56,189,248,0.5); }}
+    .st-key-hm_rail_mat   {{ --ac1:#8B5CF6;--icobg:linear-gradient(135deg,rgba(139,92,246,0.28),rgba(236,72,153,0.12));--acbord:rgba(167,139,250,0.5); }}
+    .st-key-hm_rail_cuart {{ --ac1:#34D399;--icobg:linear-gradient(135deg,rgba(52,211,153,0.28),rgba(5,150,105,0.12));--acbord:rgba(52,211,153,0.5); }}
+    .st-key-hm_rail_cont  {{ --ac1:#F97316;--icobg:linear-gradient(135deg,rgba(249,115,22,0.28),rgba(245,158,11,0.12));--acbord:rgba(249,115,22,0.5); }}
+    .st-key-hm_rail_insc:hover, .st-key-hm_rail_mat:hover, .st-key-hm_rail_cuart:hover, .st-key-hm_rail_cont:hover {{
+        transform:translateY(-2px);border-color:var(--acbord); }}
+    .st-key-hm_rail_insc:has(.ri-on), .st-key-hm_rail_mat:has(.ri-on),
+    .st-key-hm_rail_cuart:has(.ri-on), .st-key-hm_rail_cont:has(.ri-on) {{
         border-color:var(--acbord);
-        background:linear-gradient(160deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.025) 100%);
-        box-shadow:0 16px 36px -14px var(--ac1),inset 0 1px 0 rgba(255,255,255,0.10); }}
-    .st-key-railitem_insc::before, .st-key-railitem_mat::before,
-    .st-key-railitem_cuart::before, .st-key-railitem_cont::before {{
-        content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;
-        background:var(--ac1);opacity:0;transition:opacity .25s ease; }}
-    .st-key-railitem_insc:has(.rail-active-flag)::before, .st-key-railitem_mat:has(.rail-active-flag)::before,
-    .st-key-railitem_cuart:has(.rail-active-flag)::before, .st-key-railitem_cont:has(.rail-active-flag)::before {{ opacity:1; }}
-    .st-key-railitem_insc  {{ --ac1:#0EA5E9;--ac2:#6366F1; --icobg:linear-gradient(135deg,rgba(14,165,233,0.24),rgba(99,102,241,0.10)); --acbord:rgba(56,189,248,0.5); }}
-    .st-key-railitem_mat   {{ --ac1:#8B5CF6;--ac2:#EC4899; --icobg:linear-gradient(135deg,rgba(139,92,246,0.24),rgba(236,72,153,0.10)); --acbord:rgba(167,139,250,0.5); }}
-    .st-key-railitem_cuart {{ --ac1:#34D399;--ac2:#059669; --icobg:linear-gradient(135deg,rgba(52,211,153,0.24),rgba(5,150,105,0.10)); --acbord:rgba(52,211,153,0.5); }}
-    .st-key-railitem_cont  {{ --ac1:#F97316;--ac2:#F59E0B; --icobg:linear-gradient(135deg,rgba(249,115,22,0.24),rgba(245,158,11,0.10)); --acbord:rgba(249,115,22,0.5); }}
+        background:linear-gradient(160deg,rgba(255,255,255,0.11) 0%,rgba(255,255,255,0.03) 100%);
+        box-shadow:0 16px 34px -18px var(--ac1); }}
+    .ri-top {{ display:flex;align-items:center;gap:9px;margin-bottom:9px; }}
+    .ri-ico {{ width:30px;height:30px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;
+        font-size:15px;background:var(--icobg);border:1px solid var(--acbord); }}
+    .ri-name {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:12.5px;color:white;letter-spacing:-0.2px; }}
+    .ri-cifra {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:17px;color:white;line-height:1;font-variant-numeric:tabular-nums; }}
+    .ri-sub {{ font-size:9.5px;color:rgba(255,255,255,0.42);margin-top:3px; }}
 
-    .st-key-railitem_insc div[data-testid="stButton"], .st-key-railitem_mat div[data-testid="stButton"],
-    .st-key-railitem_cuart div[data-testid="stButton"], .st-key-railitem_cont div[data-testid="stButton"] {{
-        margin-top:8px; }}
-    .st-key-railitem_insc div[data-testid="stButton"] > button, .st-key-railitem_mat div[data-testid="stButton"] > button,
-    .st-key-railitem_cuart div[data-testid="stButton"] > button, .st-key-railitem_cont div[data-testid="stButton"] > button {{
-        height:32px!important;min-height:32px!important;padding:0 4px!important;
-        background:transparent!important;border:none!important;box-shadow:none!important;
-        color:rgba(255,255,255,0.38)!important;font-size:10.5px!important;font-weight:700!important;
-        text-align:center!important;justify-content:center!important;letter-spacing:0.03em!important; }}
-    .st-key-railitem_insc div[data-testid="stButton"] > button:hover {{ color:#0EA5E9!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_mat div[data-testid="stButton"] > button:hover {{ color:#8B5CF6!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_cuart div[data-testid="stButton"] > button:hover {{ color:#34D399!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_cont div[data-testid="stButton"] > button:hover {{ color:#F97316!important;transform:none!important;box-shadow:none!important; }}
-    .st-key-railitem_insc div[data-testid="stButton"] > button p, .st-key-railitem_mat div[data-testid="stButton"] > button p,
-    .st-key-railitem_cuart div[data-testid="stButton"] > button p, .st-key-railitem_cont div[data-testid="stButton"] > button p {{
-        text-align:center!important; }}
+    .st-key-hm_rail_insc div[data-testid="stElementContainer"]:has(> div[data-testid="stButton"]),
+    .st-key-hm_rail_mat div[data-testid="stElementContainer"]:has(> div[data-testid="stButton"]),
+    .st-key-hm_rail_cuart div[data-testid="stElementContainer"]:has(> div[data-testid="stButton"]),
+    .st-key-hm_rail_cont div[data-testid="stElementContainer"]:has(> div[data-testid="stButton"]) {{ margin-top:auto; }}
+    .st-key-hm_rail_insc div[data-testid="stButton"], .st-key-hm_rail_mat div[data-testid="stButton"],
+    .st-key-hm_rail_cuart div[data-testid="stButton"], .st-key-hm_rail_cont div[data-testid="stButton"] {{ margin-top:10px; }}
+    .st-key-hm_rail_insc div[data-testid="stButton"] > button, .st-key-hm_rail_mat div[data-testid="stButton"] > button,
+    .st-key-hm_rail_cuart div[data-testid="stButton"] > button, .st-key-hm_rail_cont div[data-testid="stButton"] > button {{
+        height:32px!important;min-height:32px!important;padding:0 10px!important;border-radius:9px!important;
+        background:rgba(255,255,255,0.035)!important;border:1px solid rgba(255,255,255,0.12)!important;box-shadow:none!important;
+        color:rgba(255,255,255,0.62)!important;font-size:10px!important;font-weight:700!important;
+        justify-content:center!important;letter-spacing:0.03em!important;transition:all .18s ease!important; }}
+    .st-key-hm_rail_insc div[data-testid="stButton"] > button:hover, .st-key-hm_rail_mat div[data-testid="stButton"] > button:hover,
+    .st-key-hm_rail_cuart div[data-testid="stButton"] > button:hover, .st-key-hm_rail_cont div[data-testid="stButton"] > button:hover {{
+        background:var(--icobg)!important;border-color:var(--acbord)!important;color:#fff!important; }}
+    .st-key-hm_rail_insc:has(.ri-on) div[data-testid="stButton"] > button, .st-key-hm_rail_mat:has(.ri-on) div[data-testid="stButton"] > button,
+    .st-key-hm_rail_cuart:has(.ri-on) div[data-testid="stButton"] > button, .st-key-hm_rail_cont:has(.ri-on) div[data-testid="stButton"] > button {{
+        background:var(--icobg)!important;border-color:var(--acbord)!important;color:#fff!important; }}
+    .st-key-hm_rail_insc div[data-testid="stButton"] > button p, .st-key-hm_rail_mat div[data-testid="stButton"] > button p,
+    .st-key-hm_rail_cuart div[data-testid="stButton"] > button p, .st-key-hm_rail_cont div[data-testid="stButton"] > button p {{ text-align:center!important; }}
 
-    /* -- panel de detalle -- */
-    .mod-panel {{ position:relative;overflow:hidden;border-radius:24px;padding:32px 34px 28px;
+    /* -- panel de foco -- */
+    .hm-focus {{ position:relative;overflow:hidden;border-radius:24px;padding:30px 34px 26px;
+        min-height:392px;box-sizing:border-box;
         background:linear-gradient(160deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
-        border:1px solid rgba(255,255,255,0.10);
-        box-shadow:0 24px 60px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.09);
-        min-height:460px;display:flex;flex-direction:column;animation:fadeUp .5s ease both; }}
-    .mod-panel::before {{ content:'';position:absolute;inset:0;z-index:0;
-        background-image:linear-gradient(rgba(255,255,255,0.035) 1px,transparent 1px),
-                         linear-gradient(90deg,rgba(255,255,255,0.035) 1px,transparent 1px);
-        background-size:38px 38px;
-        mask-image:radial-gradient(ellipse 70% 70% at 85% 15%,black,transparent 78%);
-        -webkit-mask-image:radial-gradient(ellipse 70% 70% at 85% 15%,black,transparent 78%); }}
-    .mod-panel-glow {{ position:absolute;top:-90px;right:-90px;width:260px;height:260px;border-radius:50%;
-        background:radial-gradient(circle,var(--ac1),transparent 70%);opacity:0.20;pointer-events:none;
-        animation:auroraMove 16s ease-in-out infinite; }}
-    .mod-panel-glow2 {{ position:absolute;bottom:-100px;left:20%;width:220px;height:220px;border-radius:50%;
-        background:radial-gradient(circle,var(--ac2),transparent 70%);opacity:0.14;pointer-events:none;
-        animation:auroraMove 20s ease-in-out infinite reverse; }}
-    .mod-panel-watermark {{ position:absolute;right:-10px;bottom:-30px;font-size:230px;line-height:1;
-        opacity:0.05;pointer-events:none;transform:rotate(-8deg);filter:blur(0.5px); }}
-    .mod-panel-top {{ display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1;margin-bottom:20px; }}
-    .mod-panel-ico-ring {{ width:80px;height:80px;border-radius:22px;display:flex;align-items:center;justify-content:center;
-        padding:5px;background:conic-gradient(var(--ac1) calc(var(--pct,100)*3.6deg),rgba(255,255,255,0.09) 0deg); }}
-    .mod-panel-ico {{ width:100%;height:100%;border-radius:18px;display:flex;align-items:center;justify-content:center;
-        font-size:30px;background:var(--icobg);border:1px solid var(--acbord);
-        box-shadow:0 12px 30px -8px var(--ac1);animation:float 3.6s ease-in-out infinite; }}
-    .mod-panel-ico-pct {{ position:absolute;bottom:-8px;right:-8px;background:#0a1712;border:1px solid var(--acbord);
-        border-radius:99px;padding:2px 8px;font-size:10px;font-weight:800;color:var(--ac1);
-        font-family:'Space Grotesk',sans-serif!important; }}
-    .mod-panel-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:32px;font-weight:700;color:white;
-        margin:0 0 12px;letter-spacing:-0.6px;position:relative;z-index:1;text-wrap:balance; }}
-    .mod-panel-title .grad {{ background:linear-gradient(90deg,var(--ac1),var(--ac2),var(--ac1));
-        background-size:220% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-        background-clip:text;animation:shimmer 4s linear infinite; }}
-    .mod-panel-desc {{ font-size:14px;color:rgba(255,255,255,0.60);line-height:1.8;
-        margin:0 0 20px;max-width:540px;position:relative;z-index:1; }}
-    .mod-panel-feats {{ display:flex;flex-wrap:wrap;gap:9px;margin-bottom:24px;position:relative;z-index:1; }}
-    .pfeat {{ font-size:11.5px;color:rgba(255,255,255,0.78);background:rgba(255,255,255,0.05);
-        border:1px solid rgba(255,255,255,0.11);padding:7px 13px;border-radius:9px;font-weight:600;
-        display:inline-flex;align-items:center;gap:6px; }}
+        border:1px solid rgba(255,255,255,0.10);border-top:3px solid var(--ac1);
+        box-shadow:0 24px 60px -26px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.08);
+        flex:1 1 auto;display:flex;flex-direction:column;animation:fadeUp .4s ease both; }}
+    .hm-focus-glow {{ position:absolute;top:-100px;right:-90px;width:260px;height:260px;border-radius:50%;
+        background:radial-gradient(circle,var(--ac1),transparent 70%);opacity:0.16;pointer-events:none; }}
+    .hm-tag {{ display:inline-flex;align-items:center;gap:7px;font-size:9px;font-weight:800;letter-spacing:0.12em;
+        text-transform:uppercase;color:var(--ac1);position:relative;z-index:1; }}
+    .hm-tag::before {{ content:'';width:6px;height:6px;border-radius:50%;background:var(--ac1);box-shadow:0 0 8px var(--ac1); }}
+    .hm-name {{ font-family:'Space Grotesk',sans-serif!important;font-size:30px;font-weight:700;color:white;
+        letter-spacing:-0.6px;margin:10px 0 10px;position:relative;z-index:1; }}
+    .hm-desc {{ font-size:13.5px;color:rgba(255,255,255,0.58);line-height:1.7;max-width:52ch;margin:0 0 22px;position:relative;z-index:1; }}
+    .hm-big {{ font-family:'Space Grotesk',sans-serif!important;font-size:52px;font-weight:700;color:white;
+        line-height:1;letter-spacing:-0.03em;position:relative;z-index:1;font-variant-numeric:tabular-nums; }}
+    .hm-bigk {{ font-size:10px;color:rgba(255,255,255,0.46);text-transform:uppercase;letter-spacing:0.07em;
+        margin:9px 0 18px;position:relative;z-index:1; }}
+    .hm-chart {{ display:flex;align-items:flex-end;gap:4px;height:60px;margin-bottom:22px;position:relative;z-index:1; }}
+    .hm-chart span {{ flex:1;border-radius:3px 3px 0 0;background:var(--ac1);opacity:0.42;min-height:3px; }}
+    .hm-chart span:last-child {{ opacity:0.9; }}
+    .hm-feats {{ display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;position:relative;z-index:1; }}
+    .hm-feat {{ font-size:11px;color:rgba(255,255,255,0.82);background:var(--icobg);
+        border:1px solid rgba(255,255,255,0.12);padding:6px 12px;border-radius:9px;font-weight:600;
+        display:inline-flex;align-items:center;gap:7px; }}
+    .hm-feat::before {{ content:'';width:5px;height:5px;border-radius:50%;background:var(--ac1);box-shadow:0 0 6px var(--ac1);flex-shrink:0; }}
 
-    /* -- trío de stats (módulo disponible) -- */
-    .mod-stat-trio {{ display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;position:relative;z-index:1; }}
-    .mod-stat {{ text-align:center;padding:16px 10px;border-radius:14px;
-        background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09); }}
-    .mod-stat-ico {{ font-size:19px;margin-bottom:8px; }}
-    .mod-stat-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:19px;font-weight:700;color:white;
-        line-height:1;margin-bottom:5px; }}
-    .mod-stat-lbl {{ font-size:9.5px;color:rgba(255,255,255,0.42);text-transform:uppercase;letter-spacing:0.06em;font-weight:700; }}
-
-    /* -- etapas de avance (módulo en desarrollo) -- */
-    .mod-stages {{ display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;position:relative;z-index:1; }}
-    .mod-stage {{ display:flex;align-items:center;gap:9px;padding:13px 12px;border-radius:14px;
-        background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09); }}
-    .mod-stage-dot {{ width:11px;height:11px;border-radius:50%;flex-shrink:0;position:relative; }}
-    .mod-stage-dot.done {{ background:#34D399;box-shadow:0 0 9px #34D399; }}
-    .mod-stage-dot.active {{ background:#FBBF24;box-shadow:0 0 9px #FBBF24;animation:sbcPulse 1.6s ease-in-out infinite; }}
-    .mod-stage-dot.pending {{ background:rgba(255,255,255,0.16); }}
-    .mod-stage-lbl {{ font-size:11.5px;font-weight:600; }}
-    .mod-stage.done .mod-stage-lbl {{ color:rgba(255,255,255,0.85); }}
-    .mod-stage.active .mod-stage-lbl {{ color:#FCD34D; }}
-    .mod-stage.pending .mod-stage-lbl {{ color:rgba(255,255,255,0.35); }}
-
-    .mod-panel-div {{ height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.14),transparent);
-        margin:0 0 20px;position:relative;z-index:1; }}
-    .mod-panel-footrow {{ display:flex;align-items:center;justify-content:space-between;gap:18px;
-        margin-top:auto;position:relative;z-index:1; }}
-    .mspark2 {{ display:flex;align-items:flex-end;gap:4px;height:40px; }}
-    .mspark2 span {{ width:6px;border-radius:3px;background:var(--ac1);opacity:.75; }}
-    .mod-panel-livechip {{ display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;
-        color:rgba(255,255,255,0.82);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
-        padding:7px 14px;border-radius:10px; }}
-    .mod-panel-note {{ display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.45);
-        font-style:italic; }}
-
-    /* ══ BUTTONS ══ */
-    div[data-testid="stButton"] > button {{
-        border-radius:14px!important;font-weight:700!important;font-size:14px!important;
-        height:50px!important;letter-spacing:0.01em!important;
+    /* ══ BOTÓN CTA ══ */
+    .st-key-hm_cta div[data-testid="stButton"] > button {{
+        border-radius:14px!important;font-family:'Space Grotesk',sans-serif!important;font-weight:700!important;font-size:14px!important;
+        height:50px!important;letter-spacing:0.01em!important;color:white!important;border:none!important;
         transition:transform .2s ease,box-shadow .2s ease,filter .2s ease!important; }}
-    div[data-testid="stButton"] > button[kind="primary"] {{
-        background:linear-gradient(120deg,#0EA5E9 0%,#6366F1 55%,#8B5CF6 100%)!important;
-        background-size:160% auto!important;color:white!important;border:none!important;
-        box-shadow:0 10px 30px -6px rgba(99,102,241,0.6)!important; }}
-    div[data-testid="stButton"] > button[kind="primary"]:hover {{
-        transform:translateY(-3px)!important;filter:brightness(1.08)!important;
-        box-shadow:0 16px 40px -8px rgba(99,102,241,0.75)!important; }}
-    div[data-testid="stButton"] > button[kind="secondary"] {{
-        background:rgba(255,255,255,0.05)!important;color:rgba(255,255,255,0.80)!important;
-        border:1px solid rgba(255,255,255,0.18)!important; }}
-    div[data-testid="stButton"] > button[kind="secondary"]:hover {{
-        background:rgba(139,92,246,0.16)!important;border-color:rgba(167,139,250,0.6)!important;
-        color:white!important;transform:translateY(-3px)!important;
-        box-shadow:0 14px 34px -10px rgba(139,92,246,0.6)!important; }}
-
-    /* ══ STATS STRIP ══ */
-    .stats {{ display:flex;gap:16px;margin-top:34px;animation:fadeUp 1s ease both; }}
-    .stat {{ flex:1;position:relative;overflow:hidden;border-radius:18px;padding:24px 18px;
-        text-align:center;background:linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.015));
-        border:1px solid rgba(255,255,255,0.09);
-        box-shadow:0 12px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06);
-        transition:transform .25s ease,border-color .25s ease; }}
-    .stat:hover {{ transform:translateY(-4px);border-color:var(--sc); }}
-    .stat::after {{ content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
-        width:60%;height:2px;background:var(--sc);border-radius:2px;opacity:.7; }}
-    .stat-ico {{ font-size:18px;margin-bottom:8px;opacity:.9; }}
-    .stat-val {{ font-family:'Space Grotesk',sans-serif!important;
-        font-size:30px;font-weight:700;color:white;line-height:1;margin-bottom:6px; }}
-    .stat-lbl {{ font-size:10px;font-weight:700;color:rgba(255,255,255,0.42);
-        text-transform:uppercase;letter-spacing:0.10em; }}
-
-    /* ══ Ocultar el menú automático del sidebar ══ */
-    [data-testid="stSidebarNav"] {{ display:none !important; }}
-
-    /* ══ HERO · separador y tarjetas de estado ══ */
-    .hero-divider {{ width:56px;height:1.5px;margin:22px auto 20px;border-radius:2px;
-        background:linear-gradient(90deg,transparent,rgba(56,189,248,0.55),rgba(129,140,248,0.55),transparent); }}
-    .hero-cards {{ display:flex;justify-content:center;gap:10px;flex-wrap:wrap; }}
-    .hcard {{ display:flex;align-items:center;gap:13px;min-width:148px;
-        background:rgba(255,255,255,0.05);
-        border:1px solid rgba(255,255,255,0.09);
-        border-top:2px solid var(--hc,rgba(56,189,248,0.50));
-        border-radius:16px;padding:14px 20px;
-        backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-        box-shadow:0 8px 28px rgba(0,0,0,0.22),inset 0 1px 0 rgba(255,255,255,0.07);
-        transition:transform .24s cubic-bezier(.2,.8,.2,1),box-shadow .24s ease,background .24s ease; }}
-    .hcard:hover {{ transform:translateY(-5px);background:rgba(255,255,255,0.09);
-        box-shadow:0 18px 44px rgba(0,0,0,0.32),0 0 0 1px var(--hc,rgba(56,189,248,0.28)),
-                   0 0 24px -8px var(--hc,rgba(56,189,248,0.28)); }}
-    .hcard-ico {{ width:44px;height:44px;border-radius:13px;flex-shrink:0;
-        display:flex;align-items:center;justify-content:center;font-size:20px;
-        background:var(--hc-bg,rgba(56,189,248,0.12));
-        border:1px solid var(--hc,rgba(56,189,248,0.22));
-        box-shadow:0 4px 16px -4px var(--hc,rgba(56,189,248,0.30)); }}
-    .hcard-txt {{ text-align:left; }}
-    .hcard-lbl {{ font-size:8.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;
-        color:var(--hc,rgba(56,189,248,0.80));margin-bottom:4px;display:block; }}
-    .hcard-val {{ font-size:15px;font-weight:800;color:white;line-height:1;display:block; }}
-    .hcard-val .dot {{ display:inline-block;width:7px;height:7px;border-radius:50%;background:#34D399;
-        box-shadow:0 0 10px #34D399;margin-right:6px;animation:sbcPulse 1.8s ease-in-out infinite; }}
-
-    /* ══ TICKER EN VIVO ══ */
-    @keyframes nticker {{ 0% {{ transform:translateX(0); }} 100% {{ transform:translateX(-50%); }} }}
-    .nticker-shell {{ display:flex;align-items:stretch;overflow:hidden;border-radius:14px;
-        background:rgba(245,158,11,0.04);
-        border:1px solid rgba(245,158,11,0.22);
-        box-shadow:0 0 30px -8px rgba(245,158,11,0.12),inset 0 1px 0 rgba(255,255,255,0.06);
-        margin:24px 0 0; }}
-    .nticker-label {{ flex-shrink:0;display:flex;align-items:center;gap:8px;
-        padding:12px 18px;font-size:8.5px;font-weight:800;letter-spacing:0.18em;
-        text-transform:uppercase;color:#F59E0B;
-        background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(245,158,11,0.08));
-        border-right:1px solid rgba(245,158,11,0.22); }}
-    .nticker-dot {{ width:7px;height:7px;border-radius:50%;background:#F59E0B;
-        box-shadow:0 0 8px #F59E0B;
-        animation:sbcPulse 1.8s ease-in-out infinite;flex-shrink:0; }}
-    .nticker-track {{ overflow:hidden;flex:1;
-        mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%);
-        -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 5%,black 95%,transparent 100%); }}
-    .nticker-inner {{ display:flex;width:max-content;
-        animation:nticker 38s linear infinite;padding:12px 0; }}
-    .nticker-inner:hover {{ animation-play-state:paused; }}
-    .nticker-item {{ display:flex;align-items:center;gap:10px;
-        padding:0 48px;white-space:nowrap;
-        font-size:13px;color:rgba(255,255,255,0.68);font-weight:500; }}
-    .nticker-sep {{ color:rgba(245,158,11,0.35);font-size:18px;margin-left:6px; }}
-    .ntag {{ font-size:8px;font-weight:800;padding:3px 8px;border-radius:5px;
-        text-transform:uppercase;letter-spacing:0.09em;flex-shrink:0; }}
-    .ntag-a {{ background:rgba(244,63,94,0.18);color:#FB7185;border:1px solid rgba(244,63,94,0.28); }}
-    .ntag-u {{ background:rgba(14,165,233,0.18);color:#38BDF8;border:1px solid rgba(14,165,233,0.28); }}
-    .ntag-n {{ background:rgba(52,211,153,0.18);color:#34D399;border:1px solid rgba(52,211,153,0.28); }}
-    .ntag-p {{ background:rgba(245,158,11,0.18);color:#FCD34D;border:1px solid rgba(245,158,11,0.28); }}
+    .st-key-hm_cta div[data-testid="stButton"] > button:hover {{
+        transform:translateY(-3px)!important;filter:brightness(1.08)!important; }}
 </style>
 """, unsafe_allow_html=True)
+
+# ── ESTADO ───────────────────────────────
+if "home_mod" not in st.session_state:
+    st.session_state.home_mod = "insc"
+
+
+def _barras(serie, n=18):
+    """serie de enteros → alturas 6..100 (%). Serie vacía → mini onda plana."""
+    serie = list(serie or [])[-n:]
+    if not serie or max(serie) == 0:
+        return [10, 14, 11, 16, 13, 18, 15, 20, 17, 22]
+    tope = max(serie)
+    return [max(6, round(v / tope * 100)) for v in serie]
+
 
 # ── HERO ─────────────────────────────────
 st.markdown("""
@@ -588,191 +419,128 @@ st.markdown("""
     <div class='hero-aurora ha1'></div>
     <div class='hero-aurora ha2'></div>
     <div class='hero-aurora ha3'></div>
-    <div class='hero-aurora ha4'></div>
     <div class='hero-inner'>
-        <div class='hero-badge'>
-            <span class='hero-badge-dot'></span>
-            Centro de Control · Uniminuto · 2026
-        </div>
-        <div class='hero-title'>
-            Dashboard<br><span class='grad'>Operativo</span>
-        </div>
-        <div class='hero-sub'>
-            Plataforma de análisis del proceso comercial y académico.
-            Monitorea <b style='color:rgba(255,255,255,0.85)'>inscripciones</b>,
-            <b style='color:rgba(255,255,255,0.85)'>matrículas</b>,
-            <b style='color:rgba(255,255,255,0.85)'>cuartiles</b> y
-            <b style='color:rgba(255,255,255,0.85)'>contactabilidad</b> en tiempo real, desde una sola base consolidada.
-        </div>
+        <div class='hero-badge'><span class='hero-badge-dot'></span>Centro de Control · Uniminuto · 2026</div>
+        <div class='hero-title'>Dashboard&nbsp;<span class='grad'>Operativo</span></div>
+        <div class='hero-sub'>Plataforma de análisis del proceso comercial y académico.
+        Inscripciones, matrículas, cuartiles y real&nbsp;time desde una sola base consolidada.</div>
         <div class='hero-divider'></div>
         <div class='hero-cards'>
             <div class='hcard' style='--hc:rgba(52,211,153,0.70);--hc-bg:rgba(52,211,153,0.13)'>
                 <div class='hcard-ico'>⚡</div>
-                <div class='hcard-txt'>
-                    <span class='hcard-lbl'>Estado del sistema</span>
-                    <span class='hcard-val'><span class='dot'></span>En línea</span>
-                </div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Estado del sistema</span>
+                <span class='hcard-val'><span class='dot'></span>En línea</span></div>
             </div>
             <div class='hcard' style='--hc:rgba(56,189,248,0.70);--hc-bg:rgba(56,189,248,0.13)'>
                 <div class='hcard-ico'>◈</div>
-                <div class='hcard-txt'>
-                    <span class='hcard-lbl'>Seguimiento</span>
-                    <span class='hcard-val'>Por asesor</span>
-                </div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Seguimiento</span>
+                <span class='hcard-val'>Por asesor</span></div>
             </div>
             <div class='hcard' style='--hc:rgba(129,140,248,0.70);--hc-bg:rgba(129,140,248,0.13)'>
                 <div class='hcard-ico'>◷</div>
-                <div class='hcard-txt'>
-                    <span class='hcard-lbl'>Período activo</span>
-                    <span class='hcard-val'>2026</span>
-                </div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Período activo</span>
+                <span class='hcard-val'>2026</span></div>
             </div>
             <div class='hcard' style='--hc:rgba(245,158,11,0.70);--hc-bg:rgba(245,158,11,0.13)'>
                 <div class='hcard-ico'>✦</div>
-                <div class='hcard-txt'>
-                    <span class='hcard-lbl'>Alianza</span>
-                    <span class='hcard-val'>Uniminuto</span>
-                </div>
+                <div class='hcard-txt'><span class='hcard-lbl'>Alianza</span>
+                <span class='hcard-val'>Uniminuto</span></div>
             </div>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
+_TICK = (
+    "<div class='nticker-item'><span class='ntag ntag-n'>Nuevo</span>"
+    "Real time ya disponible — llamadas en vivo y cierre del día vencido<span class='nticker-sep'>·</span></div>"
+    "<div class='nticker-item'><span class='ntag ntag-u'>Base 2026</span>"
+    "Inscripciones, Matrículas y Cuartiles sobre base mensual consolidada<span class='nticker-sep'>·</span></div>"
+    "<div class='nticker-item'><span class='ntag ntag-p'>Cuartiles</span>"
+    "Histórico de 6 meses y umbrales real vs. propuesto<span class='nticker-sep'>·</span></div>"
+)
 st.markdown(
-"<div class='nticker-shell'>"
-"<div class='nticker-label'><span class='nticker-dot'></span>EN VIVO</div>"
-"<div class='nticker-track'><div class='nticker-inner'>"
-"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles y Contactabilidad, en construcción <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-u'>Nuevo</span>Dashboard Operativo — módulo de Inscripciones ya disponible <span class='nticker-sep'>·</span></div>"
-"<div class='nticker-item'><span class='ntag ntag-p'>Próximamente</span>Matrículas, Cuartiles y Contactabilidad, en construcción <span class='nticker-sep'>·</span></div>"
-"</div></div></div>",
-unsafe_allow_html=True)
+    "<div class='nticker-shell'><div class='nticker-label'><span class='nticker-dot'></span>En vivo</div>"
+    "<div class='nticker-track'><div class='nticker-inner'>" + _TICK + _TICK + "</div></div></div>",
+    unsafe_allow_html=True,
+)
 
-# ── MÓDULOS · riel + panel ────────────────
-st.markdown("<div class='sec-lbl' style='margin-top:30px'>Módulos disponibles</div>", unsafe_allow_html=True)
+# ── PORTADA ──────────────────────────────
+st.markdown("<div class='hm-eyebrow'>Módulos disponibles</div>", unsafe_allow_html=True)
 
-if "home_mod" not in st.session_state:
-    st.session_state.home_mod = "insc"
-
-rail_col, panel_col = st.columns([1, 2.4], gap="medium")
+rail_col, focus_col = st.columns([1, 2.35], gap="medium")
 
 with rail_col:
     for key, m in _MODULOS.items():
         active = st.session_state.home_mod == key
-        badge_cls = "rail-status-ok" if m["status"] == "ok" else "rail-status-wip"
-        with st.container(key=f"railitem_{key}"):
-            active_flag = "<div class='rail-active-flag'></div>" if active else ""
+        with st.container(key=f"hm_rail_{key}"):
+            on = "<div class='ri-on'></div>" if active else ""
             st.markdown(
-                "<div class='rail-card-head'>"
-                f"<div class='rail-ico'>{m['icon']}</div>"
-                "<div class='rail-txt'>"
-                f"<div class='rail-title'>{m['title']}</div>"
-                f"<span class='rail-status {badge_cls}'><span class='dot'></span>{m['status_label']}</span>"
-                "</div>"
-                f"</div>{active_flag}"
-                "<div class='rail-div'></div>",
+                f"<div class='ri-top'><span class='ri-ico'>{m['icon']}</span>"
+                f"<span class='ri-name'>{m['title']}</span></div>"
+                f"<div class='ri-sub'>{m['tag']}</div>{on}",
                 unsafe_allow_html=True,
             )
-            if st.button("● viendo ahora" if active else "ver este módulo  →",
-                         key=f"railbtn_{key}", width="stretch"):
+            if st.button("● Seleccionado" if active else "Ver",
+                         key=f"hm_railbtn_{key}", width="stretch"):
                 st.session_state.home_mod = key
+                st.rerun()
 
-with panel_col:
-    m = _MODULOS[st.session_state.home_mod]
-    pct = m["progress"]
-    feats_html = "".join(f"<span class='pfeat'>✓ {f}</span>" for f in m["feats"])
-    badge_cls = "rail-status-ok" if m["status"] == "ok" else "rail-status-wip"
+with focus_col:
+    sel = st.session_state.home_mod
+    m = _MODULOS[sel]
+    with st.spinner("Cargando indicador…"):
+        r = _datos.cifra_modulo(sel)
+    bars = "".join(f"<span style='height:{h}%'></span>" for h in _barras(r.get("serie")))
+    feats = "".join(f"<span class='hm-feat'>{f}</span>" for f in m["feats"])
 
-    if m["status"] == "ok":
-        stats_html = "<div class='mod-stat-trio'>"
-        for ico, val, lbl in m["stats"]:
-            stats_html += (
-                f"<div class='mod-stat'><div class='mod-stat-ico'>{ico}</div>"
-                f"<div class='mod-stat-val'>{val}</div><div class='mod-stat-lbl'>{lbl}</div></div>"
-            )
-        stats_html += "</div>"
-        heights = [38, 62, 48, 78, 58, 90, 70, 100]
-        bars = "".join(f"<span style='height:{h}%'></span>" for h in heights)
-        foot_html = (
-            "<div class='mod-panel-footrow'>"
-            "<span class='mod-panel-livechip'>📡 Base en vivo · sincronizada con Google Sheets</span>"
-            f"<div class='mspark2'>{bars}</div>"
-            "</div>"
+    with st.container(key="hm_focus_wrap"):
+        st.markdown(
+            f"<div class='hm-focus' style='--ac1:{m['ac1']};--icobg:{m['icobg']}'>"
+            "<div class='hm-focus-glow'></div>"
+            "<div class='hm-tag'>Indicador principal</div>"
+            f"<div class='hm-name'>{m['title']}</div>"
+            f"<p class='hm-desc'>{m['desc']}</p>"
+            f"<div class='hm-big'>{r.get('cifra', '—')}</div>"
+            f"<div class='hm-bigk'>{r.get('sub', '')}</div>"
+            f"<div class='hm-chart'>{bars}</div>"
+            f"<div class='hm-feats'>{feats}</div>"
+            "</div>",
+            unsafe_allow_html=True,
         )
-    else:
-        def _stage_state(done_at, active_at):
-            if pct >= done_at:
-                return "done"
-            if pct >= active_at:
-                return "active"
-            return "pending"
-
-        stage_defs = [("Definición", 33, 1), ("Diseño y datos", 66, 33), ("Lanzamiento", 100, 66)]
-        stats_html = "<div class='mod-stages'>"
-        for label, done_at, active_at in stage_defs:
-            state = _stage_state(done_at, active_at)
-            stats_html += (
-                f"<div class='mod-stage {state}'><span class='mod-stage-dot {state}'></span>"
-                f"<span class='mod-stage-lbl'>{label}</span></div>"
-            )
-        stats_html += "</div>"
-        foot_html = (
-            "<div class='mod-panel-footrow'>"
-            "<span class='mod-panel-note'>🛠️ Seguimos construyendo este módulo, paso a paso.</span>"
-            "</div>"
+    with st.container(key="hm_cta"):
+        st.markdown(
+            "<style>.st-key-hm_cta div[data-testid='stButton']>button{"
+            f"background:linear-gradient(120deg,{m['ac1']},{m['ac2']})!important;"
+            f"box-shadow:0 12px 32px -8px {m['ac1']}!important;}}"
+            "</style>", unsafe_allow_html=True,
         )
+        if st.button(f"Abrir módulo de {m['title']}  →", key=f"hm_cta_{sel}",
+                     width="stretch", type="primary"):
+            st.switch_page(m["page"])
 
-    st.markdown("<div class='sel-eyebrow'><span class='dot'></span>Módulo seleccionado</div>", unsafe_allow_html=True)
-    panel_html = (
-        f"<div class='mod-panel' style='--ac1:{m['ac1']};--ac2:{m['ac2']};--icobg:{m['icobg']};--acbord:{m['acbord']};--pct:{pct}'>"
-        "<div class='mod-panel-glow'></div>"
-        "<div class='mod-panel-glow2'></div>"
-        f"<div class='mod-panel-watermark'>{m['icon']}</div>"
-        "<div class='mod-panel-top'>"
-        "<div style='position:relative'>"
-        f"<div class='mod-panel-ico-ring'><div class='mod-panel-ico'>{m['icon']}</div></div>"
-        f"<div class='mod-panel-ico-pct'>{pct}%</div>"
-        "</div>"
-        f"<span class='rail-status {badge_cls}' style='font-size:10px;padding:5px 12px'>"
-        f"<span class='dot'></span>{m['status_label']}</span>"
-        "</div>"
-        f"<div class='mod-panel-title'><span class='grad'>{m['title']}</span></div>"
-        f"<p class='mod-panel-desc'>{m['desc']}</p>"
-        f"<div class='mod-panel-feats'>{feats_html}</div>"
-        f"{stats_html}"
-        "<div class='mod-panel-div'></div>"
-        f"{foot_html}"
-        "</div>"
-    )
-    st.markdown(panel_html, unsafe_allow_html=True)
-    if st.button(m["cta"], key=f"panel_cta_{st.session_state.home_mod}", width="stretch",
-                 type="primary" if m["status"] == "ok" else "secondary"):
-        st.switch_page(m["page"])
-
-# ── STATS ─────────────────────────────────
+# ── STATS (pie) ──────────────────────────
 st.markdown("""
 <div class='stats'>
     <div class='stat' style='--sc:#38BDF8'>
-        <div class='stat-ico'>📝</div>
-        <div class='stat-val'>1</div>
-        <div class='stat-lbl'>Módulo Disponible</div>
+        <div class='stat-ico'>📊</div>
+        <div class='stat-val'>4</div>
+        <div class='stat-lbl'>Módulos disponibles</div>
     </div>
     <div class='stat' style='--sc:#34D399'>
         <div class='stat-ico'>📅</div>
         <div class='stat-val'>2026</div>
-        <div class='stat-lbl'>Año en Curso</div>
+        <div class='stat-lbl'>Año en curso</div>
     </div>
     <div class='stat' style='--sc:#A78BFA'>
-        <div class='stat-ico'>🧩</div>
-        <div class='stat-val'>4</div>
-        <div class='stat-lbl'>Módulos Totales</div>
+        <div class='stat-ico'>⚡</div>
+        <div class='stat-val' style='font-size:22px'>Manual</div>
+        <div class='stat-lbl'>Actualización de datos</div>
     </div>
     <div class='stat' style='--sc:#FBBF24'>
         <div class='stat-ico'>🤝</div>
-        <div class='stat-val' style='font-size:22px'>Alianza</div>
-        <div class='stat-lbl'>Uniminuto</div>
+        <div class='stat-val' style='font-size:22px'>Uniminuto</div>
+        <div class='stat-lbl'>Alianza</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
