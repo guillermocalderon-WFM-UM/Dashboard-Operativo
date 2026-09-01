@@ -1,3 +1,5 @@
+import time
+
 import streamlit as st
 
 st.set_page_config(
@@ -6,6 +8,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Cada cuánto se exige volver a iniciar sesión (el cookie de Streamlit dura 30 días;
+# esto lo acorta comparando la hora de login del token).
+_SESION_MAX_SEG = 60 * 60  # 1 hora
 
 # ─────────────────────────────────────────────
 # CONTROL DE ACCESO — login con Google + lista de correos autorizados
@@ -35,9 +41,21 @@ def _proteger_acceso() -> None:
 
     if not getattr(st.user, "is_logged_in", False):
         st.title(_APP_NOMBRE)
+        if st.session_state.pop("_sesion_expiro", False):
+            st.info("Tu sesión expiró (máximo 1 hora). Volvé a iniciar sesión.")
         st.write("Panel de uso interno. Iniciá sesión con tu cuenta de Google autorizada.")
         if st.button("Iniciar sesión con Google", type="primary"):
             st.login(_provider) if _provider else st.login()
+        st.stop()
+
+    # Caducidad de sesión: si el token se emitió hace más de _SESION_MAX_SEG, re-login.
+    try:
+        _iat = float(st.user.get("iat"))
+    except (TypeError, ValueError, AttributeError):
+        _iat = None
+    if _iat and time.time() - _iat > _SESION_MAX_SEG:
+        st.session_state["_sesion_expiro"] = True
+        st.logout()
         st.stop()
 
     _correo = (getattr(st.user, "email", "") or "").strip().lower()
