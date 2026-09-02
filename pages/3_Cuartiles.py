@@ -575,6 +575,32 @@ def _fila_evolucion_html(fila: dict) -> str:
     )
 
 
+def _df_evolucion_export(filas: list[dict], meses_recientes: list[str]) -> pd.DataFrame:
+    """Aplana `_filas_evolucion` (una fila por asesor, con lista MESES anidada) a un
+    DataFrame de una fila por asesor con una columna por mes, para exportar a Excel."""
+    filas_export = []
+    for f in filas:
+        fila = {"ASESOR": f["ASESOR"], "SUPERVISOR": f["SUPERVISOR"]}
+        for mes, datos_mes in zip(meses_recientes, f["MESES"]):
+            fila[f"MAT. {mes.upper()}"] = datos_mes["MAT"] if datos_mes else None
+            fila[f"CUARTIL MAT. {mes.upper()}"] = datos_mes["CUARTIL"] if datos_mes else None
+            fila[f"INSC. {mes.upper()}"] = datos_mes["INSC"] if datos_mes else None
+            fila[f"CUARTIL INSC. {mes.upper()}"] = datos_mes["CUARTIL_INSC"] if datos_mes else None
+        fila["PROMEDIO MAT."] = round(f["MAT_PROM"], 1)
+        fila["CUARTIL MAT. CONSOLIDADO"] = f["CUARTIL_MAT_CONSOLIDADO"]
+        fila["PROMEDIO INSC."] = round(f["INSC_PROM"], 1)
+        fila["CUARTIL INSC. CONSOLIDADO"] = f["CUARTIL_INSC_CONSOLIDADO"]
+        _delta = f["DELTA"]
+        fila["EVOLUCIÓN"] = (
+            "Sin datos" if _delta is None
+            else "Subió" if _delta > 0
+            else "Bajó" if _delta < 0
+            else "Se mantuvo"
+        )
+        filas_export.append(fila)
+    return pd.DataFrame(filas_export)
+
+
 def _render_tabla_evolucion(filas: list[dict], meses_recientes: list[str]):
     rows_html = "".join(_fila_evolucion_html(f) for f in filas)
     meses_headers = "".join(f"<th class='grp-mes' colspan='2'>{mes}</th>" for mes in meses_recientes)
@@ -1158,6 +1184,16 @@ st.markdown(f"""
 
 if _filas_evolucion:
     _render_tabla_evolucion(_filas_evolucion, _meses_evolucion)
+    _export_evolucion = _df_evolucion_export(_filas_evolucion, _meses_evolucion)
+    _b64_evolucion = base64.b64encode(_excel_bytes(_export_evolucion)).decode()
+    st.markdown(
+        f'<div style="text-align:right;margin-top:-6px;margin-bottom:8px">'
+        f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{_b64_evolucion}" '
+        f'download="evolucion_reciente.xlsx" '
+        f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
+        f'↓ Exportar Excel</a></div>',
+        unsafe_allow_html=True,
+    )
 else:
     st.caption("Sin histórico suficiente para mostrar la evolución.")
 
