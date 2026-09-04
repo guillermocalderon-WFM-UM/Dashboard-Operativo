@@ -29,7 +29,7 @@ ID_REALTIME = "1PRMsfsyAX60Ob6w4dBlVpl9yuivF2As_yPvfi9gJI6E"
 
 # Base de matrículas: un archivo por mes. Cada uno trae la pestaña "Base" (matrículas del mes)
 # y una pestaña "<Mes>" con el directorio de expertos (SIU, Agente, Documento, Supervisor,
-# Coordinador). Al abrir un mes nuevo, agregar aquí su doc_id (clave = nombre de la pestaña).
+# Coordinador). Enero-Agosto ya probados, quedan fijos aquí.
 SHEETS_MATRICULAS_MES = {
     "Enero":   "1q3VOEoaL07fkXxom-TP3ylKbV3m-o5AkZwEslEFC7Uc",
     "Febrero": "13BPLLx18MEN_Ot3n9OzvjY63gVoFypAvLcrf0F2YN1M",
@@ -40,6 +40,10 @@ SHEETS_MATRICULAS_MES = {
     "Julio":   "1WxvZXQqnNDg3fRpA3xoK4CzEb0y8XdXgknTvx3rHyOk",
     "Agosto":  "1-PwX6_PGhRJJiG4FD_1dqHDSG9jGNbBVsMpg-WOBv1c",
 }
+# Septiembre en adelante: se leen de la pestaña "Índice Matrículas" del sheet de Metas
+# (columnas MES, ID_HOJA) — ver _meses_matriculas(). Así un mes nuevo no requiere tocar
+# código ni redeploy: solo compartir la hoja nueva (igual que las anteriores) y agregar
+# una fila en ese índice.
 
 _MES_ORDEN = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -81,13 +85,18 @@ def _leer(sheet_id: str, hoja: str, tq: str | None = None, **kwargs) -> pd.DataF
     return df
 
 
-def _leer_paralelo(specs: list[tuple]) -> list[pd.DataFrame]:
-    """specs = [(sheet_id, hoja, kwargs_dict), ...] → DataFrames en el mismo orden."""
+def _leer_paralelo(specs: list[tuple]) -> list[pd.DataFrame | None]:
+    """specs = [(sheet_id, hoja, kwargs_dict), ...] → DataFrames en el mismo orden.
+    Si una hoja falla (sin compartir, tab renombrado, etc.) queda `None` en su
+    lugar en vez de tumbar toda la descarga — quien llama decide qué hacer."""
     out: list = [None] * len(specs)
     with _cf.ThreadPoolExecutor(max_workers=min(16, len(specs))) as ex:
         fut = {ex.submit(_leer, sid, hoja, **kw): i for i, (sid, hoja, kw) in enumerate(specs)}
         for f in _cf.as_completed(fut):
-            out[fut[f]] = f.result()
+            try:
+                out[fut[f]] = f.result()
+            except Exception:
+                out[fut[f]] = None
     return out
 
 
@@ -295,20 +304,48 @@ def _directorio_maestro(dirs: list[pd.DataFrame]) -> dict:
 
 
 @st.cache_data(**_CACHE)
+def _meses_matriculas() -> dict:
+    """Enero-Agosto (fijos en el código) + los meses que se agreguen en la pestaña
+    "Índice Matrículas" del sheet de Metas (columnas MES, ID_HOJA). Si esa pestaña
+    no existe o falla, no rompe nada: quedan solo los meses fijos."""
+    meses = dict(SHEETS_MATRICULAS_MES)
+    try:
+        idx = _leer(ID_METAS, "Índice Matrículas")
+        for _, fila in idx.iterrows():
+            mes = str(fila.get("MES", "")).strip()
+            sid = str(fila.get("ID_HOJA", "")).strip()
+            if mes and sid and mes not in meses:
+                meses[mes] = sid
+    except Exception:
+        pass
+    return meses
+
+
+@st.cache_data(**_CACHE)
 def matriculas() -> pd.DataFrame:
-    """Base de Matrículas: 8 archivos mensuales + directorio maestro de expertos.
+    """Base de Matrículas: un archivo por mes + directorio maestro de expertos.
 
     Todas las filas de "Base" son matrículas y se conservan. El experto/supervisor/
     coordinador se resuelven contra el directorio maestro por "Usuario SIU" → "Usuario"
     → nombre de "EXPERTO ASIGNADO". Lo no encontrado queda "Sin asignar".
     """
-    specs = [(sid, "Base", {}) for sid in SHEETS_MATRICULAS_MES.values()]
-    specs += [(sid, mes, {"dtype": str}) for mes, sid in SHEETS_MATRICULAS_MES.items()]
+    meses_ids = _meses_matriculas()
+    _meses = list(meses_ids.keys())
+    specs = [(sid, "Base", {}) for sid in meses_ids.values()]
+    specs += [(sid, mes, {"dtype": str}) for mes, sid in meses_ids.items()]
     frames = _leer_paralelo(specs)
-    n = len(SHEETS_MATRICULAS_MES)
+    n = len(meses_ids)
     bases, dirs = frames[:n], frames[n:]
 
-    for mes, b in zip(SHEETS_MATRICULAS_MES, bases):
+    # Un mes cuya hoja falle (p. ej. recién agregado y sin compartir aún) se
+    # descarta en vez de tumbar los demás — aparece solo apenas se comparta.
+    _ok = [i for i in range(n) if bases[i] is not None and dirs[i] is not None]
+    if len(_ok) < n:
+        _meses = [_meses[i] for i in _ok]
+        bases = [bases[i] for i in _ok]
+        dirs = [dirs[i] for i in _ok]
+
+    for mes, b in zip(_meses, bases):
         b["_ARCHIVO_MES"] = mes
     df = pd.concat(bases, ignore_index=True)
     dirm = _directorio_maestro(dirs)
