@@ -29,21 +29,19 @@ ID_REALTIME = "1PRMsfsyAX60Ob6w4dBlVpl9yuivF2As_yPvfi9gJI6E"
 
 # Base de matrículas: un archivo por mes. Cada uno trae la pestaña "Base" (matrículas del mes)
 # y una pestaña "<Mes>" con el directorio de expertos (SIU, Agente, Documento, Supervisor,
-# Coordinador). Enero-Agosto ya probados, quedan fijos aquí.
+# Coordinador). Al agregar un mes nuevo: compartirlo como "Cualquier persona con el enlace"
+# (igual que los anteriores) y sumar su doc_id aquí.
 SHEETS_MATRICULAS_MES = {
-    "Enero":   "1q3VOEoaL07fkXxom-TP3ylKbV3m-o5AkZwEslEFC7Uc",
-    "Febrero": "13BPLLx18MEN_Ot3n9OzvjY63gVoFypAvLcrf0F2YN1M",
-    "Marzo":   "1xeoMksfjbG6iopExDh9puhhMimo--xdyCcHayXJn_bQ",
-    "Abril":   "1j_LsMWCYM291jm4TgRPNsWO3-vHrfH8xgtS-4cYTAnY",
-    "Mayo":    "18oxEZZ4AEgivWysIYWcXb0vsJ6ZoqeqRMAMgAOb1XZo",
-    "Junio":   "1vEhb7-DqJh8wFmR2MRzbCyzRX3hX-LGj38buxtc7vY8",
-    "Julio":   "1WxvZXQqnNDg3fRpA3xoK4CzEb0y8XdXgknTvx3rHyOk",
-    "Agosto":  "1-PwX6_PGhRJJiG4FD_1dqHDSG9jGNbBVsMpg-WOBv1c",
+    "Enero":      "1q3VOEoaL07fkXxom-TP3ylKbV3m-o5AkZwEslEFC7Uc",
+    "Febrero":    "13BPLLx18MEN_Ot3n9OzvjY63gVoFypAvLcrf0F2YN1M",
+    "Marzo":      "1xeoMksfjbG6iopExDh9puhhMimo--xdyCcHayXJn_bQ",
+    "Abril":      "1j_LsMWCYM291jm4TgRPNsWO3-vHrfH8xgtS-4cYTAnY",
+    "Mayo":       "18oxEZZ4AEgivWysIYWcXb0vsJ6ZoqeqRMAMgAOb1XZo",
+    "Junio":      "1vEhb7-DqJh8wFmR2MRzbCyzRX3hX-LGj38buxtc7vY8",
+    "Julio":      "1WxvZXQqnNDg3fRpA3xoK4CzEb0y8XdXgknTvx3rHyOk",
+    "Agosto":     "1-PwX6_PGhRJJiG4FD_1dqHDSG9jGNbBVsMpg-WOBv1c",
+    "Septiembre": "1x9rz0v8sjKnjooXX1a0qwil3TivYNuMVttzp7gum44A",
 }
-# Septiembre en adelante: se leen de la pestaña "Índice Matrículas" del sheet de Metas
-# (columnas MES, ID_HOJA) — ver _meses_matriculas(). Así un mes nuevo no requiere tocar
-# código ni redeploy: solo compartir la hoja nueva (igual que las anteriores) y agregar
-# una fila en ese índice.
 
 _MES_ORDEN = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -304,32 +302,15 @@ def _directorio_maestro(dirs: list[pd.DataFrame]) -> dict:
 
 
 @st.cache_data(**_CACHE)
-def _meses_matriculas() -> dict:
-    """Enero-Agosto (fijos en el código) + los meses que se agreguen en la pestaña
-    "Índice Matrículas" del sheet de Metas (columnas MES, ID_HOJA). Si esa pestaña
-    no existe o falla, no rompe nada: quedan solo los meses fijos."""
-    meses = dict(SHEETS_MATRICULAS_MES)
-    try:
-        idx = _leer(ID_METAS, "Índice Matrículas")
-        for _, fila in idx.iterrows():
-            mes = str(fila.get("MES", "")).strip()
-            sid = str(fila.get("ID_HOJA", "")).strip()
-            if mes and sid and mes not in meses:
-                meses[mes] = sid
-    except Exception:
-        pass
-    return meses
-
-
-@st.cache_data(**_CACHE)
 def matriculas() -> pd.DataFrame:
-    """Base de Matrículas: un archivo por mes + directorio maestro de expertos.
+    """Base de Matrículas: un archivo por mes (SHEETS_MATRICULAS_MES) + directorio
+    maestro de expertos.
 
     Todas las filas de "Base" son matrículas y se conservan. El experto/supervisor/
     coordinador se resuelven contra el directorio maestro por "Usuario SIU" → "Usuario"
     → nombre de "EXPERTO ASIGNADO". Lo no encontrado queda "Sin asignar".
     """
-    meses_ids = _meses_matriculas()
+    meses_ids = SHEETS_MATRICULAS_MES
     _meses = list(meses_ids.keys())
     specs = [(sid, "Base", {}) for sid in meses_ids.values()]
     specs += [(sid, mes, {"dtype": str}) for mes, sid in meses_ids.items()]
