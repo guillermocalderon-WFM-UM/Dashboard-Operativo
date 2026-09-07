@@ -163,6 +163,7 @@ def _cargar_inscripciones() -> pd.DataFrame:
     df["_CC"] = pd.to_numeric(df["CEDULA AGENT"], errors="coerce").astype("Int64")
     df["_ASESOR"] = df["NOMBRE AGENT"].fillna("Sin asignar")
     df["_SUPERVISOR"] = df["SUPERVISOR"].fillna("Sin asignar")
+    df["_DIA"] = df["_FECHA_INSC"].dt.day
     return df
 
 
@@ -172,17 +173,27 @@ _COLS_CLASIFICACION = [
 ]
 
 
+def _dia_de(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(s, errors="coerce")
+
+
 @st.cache_data(show_spinner=False)
-def _tabla_clasificacion(mes_sel: str) -> pd.DataFrame:
+def _tabla_clasificacion(mes_sel: str, mes_corte: str | None = None, dia_corte: int | None = None) -> pd.DataFrame:
     """Universo del mes = todos los asesores con Meta asignada ese MES/AÑO (Metas es el
     respaldo para que aparezcan aunque tengan 0 real). El cuartil se calcula sobre REAL_MAT
     de ese universo completo — un asesor en 0 matrículas es un dato de desempeño válido,
-    no se excluye. Cacheado por mes: se llama muchas veces (evolución + período)."""
+    no se excluye. Cacheado por mes: se llama muchas veces (evolución + período).
+
+    `mes_corte`/`dia_corte`: si el mes que se está clasificando es `mes_corte`, solo se
+    cuentan matrículas/inscripciones/insumo hasta el día `dia_corte` (inclusive). En
+    cualquier otro mes el recorte no aplica y se cuenta el mes completo."""
     mat, insc, metas, leads = _cargar_matriculas(), _cargar_inscripciones(), _cargar_metas(), _cargar_leads()
     anios = metas.loc[metas["MES"] == mes_sel, "AÑO"].dropna()
     if not len(anios):
         return pd.DataFrame(columns=_COLS_CLASIFICACION)
     anio_sel = int(anios.mode().iat[0])
+
+    _cut = dia_corte if (dia_corte is not None and mes_corte == mes_sel) else None
 
     m = metas[(metas["MES"] == mes_sel) & (metas["AÑO"] == anio_sel)]
     meta_asesor = (
@@ -194,16 +205,24 @@ def _tabla_clasificacion(mes_sel: str) -> pd.DataFrame:
         [["_ASESOR_META", "_SUPERVISOR_META", "META_INSC", "META_MAT"]]
     )
 
+    _mat_mes = mat[(mat["MES"] == mes_sel) & (mat["AÑO"] == anio_sel)]
+    _insc_mes = insc[(insc["MES"] == mes_sel) & (insc["AÑO"] == anio_sel)]
+    _leads_mes = leads[(leads["MES"] == mes_sel) & (leads["AÑO"] == anio_sel)]
+    if _cut is not None:
+        _mat_mes = _mat_mes[_dia_de(_mat_mes["DÍA"]) <= _cut]
+        _insc_mes = _insc_mes[_dia_de(_insc_mes["_DIA"]) <= _cut]
+        _leads_mes = _leads_mes[_leads_mes["_FECHA"].dt.day <= _cut]
+
     real_mat = (
-        mat[(mat["MES"] == mes_sel) & (mat["AÑO"] == anio_sel)].dropna(subset=["_CC"])
+        _mat_mes.dropna(subset=["_CC"])
         .groupby("_CC").agg(REAL_MAT=("_CC", "size"), _ASESOR_MAT=("_ASESOR", "first"), _SUPERVISOR_MAT=("_SUPERVISOR", "first"))
     )
     real_insc = (
-        insc[(insc["MES"] == mes_sel) & (insc["AÑO"] == anio_sel)].dropna(subset=["_CC"])
+        _insc_mes.dropna(subset=["_CC"])
         .groupby("_CC").agg(REAL_INSC=("_CC", "size"), _ASESOR_INSC=("_ASESOR", "first"), _SUPERVISOR_INSC=("_SUPERVISOR", "first"))
     )
     insumo_mes = (
-        leads[(leads["MES"] == mes_sel) & (leads["AÑO"] == anio_sel)].dropna(subset=["_CC"])
+        _leads_mes.dropna(subset=["_CC"])
         .groupby("_CC")["_INSUMO"].sum().rename("INSUMO")
     )
 
@@ -238,14 +257,15 @@ def _tabla_clasificacion(mes_sel: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def _tabla_periodo(mes_sel: str, meses_ventana: tuple) -> pd.DataFrame:
+def _tabla_periodo(mes_sel: str, meses_ventana: tuple, mes_corte: str | None = None, dia_corte: int | None = None) -> pd.DataFrame:
     """Igual que `_tabla_clasificacion` pero soporta mes_sel == 'Todos': SUMA
     matrículas/inscripciones/meta/insumo de cada asesor en la ventana de meses y
-    recalcula cuartiles sobre ese total."""
+    recalcula cuartiles sobre ese total. El recorte por día solo afecta a `mes_corte`;
+    los demás meses de la ventana se cuentan completos."""
     if mes_sel != "Todos":
-        return _tabla_clasificacion(mes_sel)
+        return _tabla_clasificacion(mes_sel, mes_corte, dia_corte)
 
-    partes = [_tabla_clasificacion(m) for m in meses_ventana]
+    partes = [_tabla_clasificacion(m, mes_corte, dia_corte) for m in meses_ventana]
     partes = [p for p in partes if len(p)]
     if not partes:
         return pd.DataFrame(columns=_COLS_CLASIFICACION)
@@ -270,7 +290,7 @@ def _tabla_periodo(mes_sel: str, meses_ventana: tuple) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def _tabla_evolucion_reciente(meses_recientes: tuple) -> tuple[list[dict], list[str]]:
+def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = None, dia_corte: int | None = None) -> tuple[list[dict], list[str]]:
     """Una fila por asesor con Matrículas/Inscripciones/Cuartil (de cada métrica) de cada uno
     de los meses de la ventana, más un cuartil CONSOLIDADO por métrica (sobre el promedio
     mensual) y si evolucionó (comparando su primer y último cuartil de matrículas válido).
@@ -278,7 +298,7 @@ def _tabla_evolucion_reciente(meses_recientes: tuple) -> tuple[list[dict], list[
     meses_recientes = list(meses_recientes)
     tablas_mes = {}
     for mes in meses_recientes:
-        t = _tabla_clasificacion(mes)
+        t = _tabla_clasificacion(mes, mes_corte, dia_corte)
         # Un mismo nombre puede tener dos cédulas distintas en la base (dato duplicado/reingreso);
         # sin agrupar, t.loc[asesor] devolvería 2 filas en vez de 1 y rompería el resto de la función.
         tablas_mes[mes] = t.groupby("ASESOR", as_index=True).agg(
@@ -682,6 +702,18 @@ with st.sidebar:
         mes_sel = None
         st.caption("⚠️ Sin datos de matrículas para cuartilizar.")
 
+    # Recorte por día: útil para el mes en curso (aún incompleto). Solo afecta al mes elegido
+    # aquí; el resto del período se cuenta completo.
+    if meses_disponibles:
+        mes_corte = st.selectbox("Recortar por día · mes", meses_disponibles,
+                                 index=len(meses_disponibles) - 1,
+                                 help="El corte por día se aplica solo a este mes; los demás quedan completos.")
+        _dia_raw = st.slider("Contar hasta el día", 1, 31, 31,
+                             help="Cuenta matrículas e inscripciones registradas hasta ese día del mes (inclusive). 31 = mes completo.")
+        dia_corte = None if _dia_raw >= 31 else int(_dia_raw)
+    else:
+        mes_corte = dia_corte = None
+
     st.markdown("""<div class='sbh'>
         <div class='sbh-num' style='color:#34D399!important;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.22)'>02</div>
         <div class='sbh-lbl'>Filtros</div>
@@ -689,7 +721,7 @@ with st.sidebar:
     </div>""", unsafe_allow_html=True)
 
     tabla_mes_full = (
-        _tabla_periodo(mes_sel, tuple(_MESES_VENTANA))
+        _tabla_periodo(mes_sel, tuple(_MESES_VENTANA), mes_corte, dia_corte)
         if mes_sel else pd.DataFrame(columns=_COLS_CLASIFICACION)
     )
     supervisores = ["Todos"] + sorted(s for s in tabla_mes_full["SUPERVISOR"].unique().tolist() if s and s != "Sin asignar")
@@ -1032,6 +1064,10 @@ _insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
 
+_chip_corte = (
+    f"<span class='hb-chip'>✂️ {mes_corte} hasta el día <b>{dia_corte}</b></span>"
+    if dia_corte is not None else ""
+)
 with st.container(key="hdrbanner"):
     st.markdown(f"""
     <div class='hb-eyebrow'><span class='hb-dot'></span>Centro de Control · Uniminuto 2026</div>
@@ -1039,6 +1075,7 @@ with st.container(key="hdrbanner"):
     <div class='hb-meta'>
         <span class='hb-chip'>📅 Mes <b>{mes_sel or "—"}</b></span>
         <span class='hb-chip'>🧭 Basado en volumen de Matrículas</span>
+        {_chip_corte}
     </div>
     <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
@@ -1164,7 +1201,8 @@ with _uc2:
 # EVOLUCIÓN RECIENTE (ÚLTIMOS 6 MESES) — primera tabla del módulo
 # ─────────────────────────────────────────────
 _N_MESES_EVOLUCION = 6
-_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(tuple(meses_disponibles[-_N_MESES_EVOLUCION:]))
+_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(
+    tuple(meses_disponibles[-_N_MESES_EVOLUCION:]), mes_corte, dia_corte)
 if sup_sel != "Todos":
     _filas_evolucion = [f for f in _filas_evolucion if f["SUPERVISOR"] == sup_sel]
 if exp_sel != "Todos":
