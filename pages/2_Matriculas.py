@@ -1242,7 +1242,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 _detalle = b.copy()
+if "ID" in _detalle.columns:
+    # "ID" viene de la hoja "Base" (nº de matrícula). Se muestra como texto plano
+    # para evitar separadores de miles / notación científica en la tabla y el Excel.
+    _detalle["ID"] = pd.to_numeric(_detalle["ID"], errors="coerce").astype("Int64").astype("string").fillna("")
 cols_detalle = {
+    "ID": "ID MATRÍCULA",
     "NOMBRE_COMPLETO": "NOMBRE", "Cedula": "CEDULA", "Programa": "PROGRAMA",
     "Nivel Formación": "NIVEL", "COHORTE": "COHORTE", "PERIODO ACADEMICO": "PERIODO ACADÉMICO",
     "_ASESOR": "EXPERTO", "_SUPERVISOR": "SUPERVISOR", "_COORDINADOR": "COORDINADOR",
