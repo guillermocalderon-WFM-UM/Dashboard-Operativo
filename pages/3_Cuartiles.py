@@ -1198,11 +1198,18 @@ with _uc2:
     _render_tabla_umbrales(_umbral_insc, "Inscripciones", "📝", "Propuesto = umbral real del cuartil siguiente")
 
 # ─────────────────────────────────────────────
-# EVOLUCIÓN RECIENTE (ÚLTIMOS 6 MESES) — primera tabla del módulo
+# EVOLUCIÓN RECIENTE (VENTANA DE 6 MESES) — primera tabla del módulo
 # ─────────────────────────────────────────────
+# La ventana termina en el mes seleccionado en el filtro "Mes" (y sus 5 meses previos).
+# Con "Todos" se muestran los últimos 6 meses disponibles.
 _N_MESES_EVOLUCION = 6
+if _es_todos:
+    _ventana_evol = meses_disponibles[-_N_MESES_EVOLUCION:]
+else:
+    _idx_sel = meses_disponibles.index(mes_sel)
+    _ventana_evol = meses_disponibles[max(0, _idx_sel - _N_MESES_EVOLUCION + 1): _idx_sel + 1]
 _filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(
-    tuple(meses_disponibles[-_N_MESES_EVOLUCION:]), mes_corte, dia_corte)
+    tuple(_ventana_evol), mes_corte, dia_corte)
 if sup_sel != "Todos":
     _filas_evolucion = [f for f in _filas_evolucion if f["SUPERVISOR"] == sup_sel]
 if exp_sel != "Todos":
