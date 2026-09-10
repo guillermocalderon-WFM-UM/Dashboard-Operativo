@@ -582,25 +582,39 @@ with st.sidebar:
     else:
         f_min = f_max = hoy
 
+    def _bounds_mes(mes_nombre: str):
+        """Primer y último día del mes calendario `mes_nombre` (año del último dato)."""
+        if mes_nombre not in _MES_ORDEN:
+            return None
+        mnum = _MES_ORDEN.index(mes_nombre) + 1
+        yr = f_max.year
+        return date(yr, mnum, 1), date(yr, mnum, calendar.monthrange(yr, mnum)[1])
+
     def _sincronizar_fechas_con_mes():
-        """Al elegir un Mes, el rango Desde/Hasta salta a cubrir solo ese mes — si no,
-        la meta de 'Avance vs. Meta' acumularía todos los meses del rango abierto."""
+        """Al elegir un Mes, Desde/Hasta salta al mes calendario COMPLETO, así la tabla
+        Avance vs. Meta muestra la meta del mes entero aunque estemos a mitad de mes.
+        Para ver el corte a la fecha se ajusta Desde/Hasta a mano (dentro de ese mes).
+        'Todos' reabre el rango completo."""
         valor = st.session_state.get("mes_sel_widget")
-        if not valor or valor == "Todos":
-            return
-        fechas_mes = base_full.loc[base_full["MES"] == valor, "FECHA_INSCRIPCION"]
-        fechas_mes = pd.to_datetime(fechas_mes, errors="coerce", dayfirst=True).dt.date.dropna()
-        if len(fechas_mes):
-            st.session_state["fecha_ini_widget"] = max(f_min, fechas_mes.min())
-            st.session_state["fecha_fin_widget"] = min(f_max, fechas_mes.max())
+        b = _bounds_mes(valor) if valor and valor != "Todos" else None
+        st.session_state["fecha_ini_widget"], st.session_state["fecha_fin_widget"] = b or (f_min, f_max)
+
+    # Con un Mes elegido, el selector de Período solo permite días de ese mes.
+    _mes_activo = st.session_state.get("mes_sel_widget", "Todos")
+    _bm = _bounds_mes(_mes_activo) if _mes_activo != "Todos" else None
+    picker_min, picker_max = _bm if _bm else (f_min, f_max)
 
     st.session_state.setdefault("fecha_ini_widget", f_min)
     st.session_state.setdefault("fecha_fin_widget", f_max)
+    if not (picker_min <= st.session_state["fecha_ini_widget"] <= picker_max):
+        st.session_state["fecha_ini_widget"] = picker_min
+    if not (picker_min <= st.session_state["fecha_fin_widget"] <= picker_max):
+        st.session_state["fecha_fin_widget"] = picker_max
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        fecha_ini = st.date_input("Desde", min_value=f_min, max_value=f_max, key="fecha_ini_widget")
+        fecha_ini = st.date_input("Desde", min_value=picker_min, max_value=picker_max, key="fecha_ini_widget")
     with col_f2:
-        fecha_fin = st.date_input("Hasta", min_value=f_min, max_value=f_max, key="fecha_fin_widget")
+        fecha_fin = st.date_input("Hasta", min_value=picker_min, max_value=picker_max, key="fecha_fin_widget")
 
     st.markdown("""<div class='sbh'>
         <div class='sbh-num' style='color:#34D399!important;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.22)'>02</div>
@@ -1001,8 +1015,8 @@ if mes_sel != "Todos":
 if coord_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COORDINADOR"] == coord_sel]
 
-# Al filtrar por Mes, el avance vs. meta se recorta a ese mes aunque el rango
-# Desde/Hasta siga abierto — si no, la meta acumularía todos los meses del rango.
+# Con un Mes elegido el selector de Período ya está acotado a ese mes; este recorte
+# es solo un cinturón de seguridad por si el estado del widget llega desincronizado.
 avance_ini, avance_fin = fecha_ini, fecha_fin
 if mes_sel != "Todos" and mes_sel in _MES_ORDEN:
     _m = _MES_ORDEN.index(mes_sel) + 1
