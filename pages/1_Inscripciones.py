@@ -97,6 +97,43 @@ def _dias_habiles_rango(fecha_ini: date, fecha_fin: date) -> int:
     return sum(1 for i in range(total_dias) if _es_habil(fecha_ini + timedelta(days=i)))
 
 
+def _meses_en_rango(fecha_ini: date, fecha_fin: date) -> list[tuple[int, int]]:
+    """Lista de (año, mes) cubiertos por el rango [fecha_ini, fecha_fin], inclusive."""
+    out = []
+    anio, mes = fecha_ini.year, fecha_ini.month
+    while (anio, mes) <= (fecha_fin.year, fecha_fin.month):
+        out.append((anio, mes))
+        mes += 1
+        if mes > 12:
+            mes, anio = 1, anio + 1
+    return out
+
+
+def _meta_avance_por_mes(metas: pd.DataFrame, anio: int, mes: int, fecha_ini: date, fecha_fin: date) -> pd.DataFrame:
+    """Meta de inscripciones (completas / incompletas) por supervisor para UN mes,
+    prorateada por los días hábiles del mes que caen dentro de [fecha_ini, fecha_fin].
+    Devuelve un DataFrame indexado por SUPERVISOR con columnas '_C' y '_I'."""
+    dias_mes = _dias_habiles(anio, mes)
+    if not dias_mes:
+        return pd.DataFrame(columns=["_C", "_I"], dtype=float)
+    ultimo_dia = calendar.monthrange(anio, mes)[1]
+    cubierto_ini = max(fecha_ini, date(anio, mes, 1))
+    cubierto_fin = min(fecha_fin, date(anio, mes, ultimo_dia))
+    dias_cubiertos = _dias_habiles_rango(cubierto_ini, cubierto_fin)
+    if dias_cubiertos <= 0:
+        return pd.DataFrame(columns=["_C", "_I"], dtype=float)
+
+    mes_corte = _MES_ORDEN[mes - 1]
+    m = metas[(metas["MES"] == mes_corte) & (metas["AÑO"] == anio)].copy()
+    meta_asesor = m.dropna(subset=["SUPERVISOR", "CC"]).drop_duplicates("CC").copy()
+    if meta_asesor.empty:
+        return pd.DataFrame(columns=["_C", "_I"], dtype=float)
+    meta_asesor["_I_full"] = meta_asesor["Meta inscripciones"] - meta_asesor["Meta inscripciones completas"]
+    g = meta_asesor.groupby("SUPERVISOR")[["Meta inscripciones completas", "_I_full"]].sum()
+    factor = dias_cubiertos / dias_mes
+    return pd.DataFrame({"_C": g["Meta inscripciones completas"] * factor, "_I": g["_I_full"] * factor})
+
+
 def _tabla_avance(base: pd.DataFrame, metas: pd.DataFrame, fecha_ini: date, fecha_fin: date) -> tuple[pd.DataFrame, pd.Series]:
     b = base[base["SUPERVISOR"].notna()].copy()
     b["_SUPERVISOR"] = b["SUPERVISOR"]
@@ -106,20 +143,24 @@ def _tabla_avance(base: pd.DataFrame, metas: pd.DataFrame, fecha_ini: date, fech
     real["REAL_TOTAL"] = real["_total"]
     real = real.drop(columns="_total")
 
-    dias_habiles_mes = _dias_habiles(fecha_fin.year, fecha_fin.month)
-    dias_habiles_rango = _dias_habiles_rango(fecha_ini, fecha_fin)
-
+    # La meta se acumula MES A MES sobre el rango: cada mes aporta su meta mensual
+    # prorateada por (días hábiles cubiertos del mes ÷ días hábiles del mes completo).
+    # Antes se usaba solo `fecha_fin.month` con los días hábiles de TODO el rango, así
+    # que un rango de varios meses (o el filtro Mes sin recortar las fechas) inflaba la
+    # meta ×N — p. ej. enero–septiembre daba la meta de septiembre ×(203/26).
     _cols_meta_necesarias = {"SUPERVISOR", "CC", "MES", "AÑO", "Meta inscripciones", "Meta inscripciones completas"}
-    if _cols_meta_necesarias.issubset(metas.columns) and dias_habiles_mes:
-        mes_corte = _MES_ORDEN[fecha_fin.month - 1]
-        m = metas[(metas["MES"] == mes_corte) & (metas["AÑO"] == fecha_fin.year)].copy()
-        meta_asesor = m.dropna(subset=["SUPERVISOR", "CC"]).drop_duplicates("CC").copy()
-        meta_asesor["_meta_incompletas"] = meta_asesor["Meta inscripciones"] - meta_asesor["Meta inscripciones completas"]
-        meta_sup = meta_asesor.groupby("SUPERVISOR")[["Meta inscripciones completas", "_meta_incompletas"]].sum()
-        meta_sup["META_DIA_COMPLETAS"] = (meta_sup["Meta inscripciones completas"] / dias_habiles_mes * dias_habiles_rango).round().astype(int)
-        meta_sup["META_DIA_INCOMPLETAS"] = (meta_sup["_meta_incompletas"] / dias_habiles_mes * dias_habiles_rango).round().astype(int)
-        meta_sup["META_DIA_TOTAL"] = meta_sup["META_DIA_COMPLETAS"] + meta_sup["META_DIA_INCOMPLETAS"]
-        meta_cols = meta_sup[["META_DIA_COMPLETAS", "META_DIA_INCOMPLETAS", "META_DIA_TOTAL"]]
+    meta_acc = pd.DataFrame(columns=["_C", "_I"], dtype=float)
+    if _cols_meta_necesarias.issubset(metas.columns):
+        for anio, mes in _meses_en_rango(fecha_ini, fecha_fin):
+            meta_acc = meta_acc.add(
+                _meta_avance_por_mes(metas, anio, mes, fecha_ini, fecha_fin), fill_value=0
+            )
+
+    if len(meta_acc):
+        meta_cols = pd.DataFrame(index=meta_acc.index)
+        meta_cols["META_DIA_COMPLETAS"] = meta_acc["_C"].round().astype(int)
+        meta_cols["META_DIA_INCOMPLETAS"] = meta_acc["_I"].round().astype(int)
+        meta_cols["META_DIA_TOTAL"] = meta_cols["META_DIA_COMPLETAS"] + meta_cols["META_DIA_INCOMPLETAS"]
     else:
         meta_cols = pd.DataFrame(columns=["META_DIA_COMPLETAS", "META_DIA_INCOMPLETAS", "META_DIA_TOTAL"])
 
@@ -534,16 +575,32 @@ with st.sidebar:
         <div class='sbh-rule'></div>
     </div>""", unsafe_allow_html=True)
 
-    fechas_insc = pd.to_datetime(base_full["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dropna().dt.date
+    _fechas_insc_serie = pd.to_datetime(base_full["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
+    fechas_insc = _fechas_insc_serie.dropna()
     if len(fechas_insc):
         f_min, f_max = fechas_insc.min(), fechas_insc.max()
     else:
         f_min = f_max = hoy
+
+    def _sincronizar_fechas_con_mes():
+        """Al elegir un Mes, el rango Desde/Hasta salta a cubrir solo ese mes — si no,
+        la meta de 'Avance vs. Meta' acumularía todos los meses del rango abierto."""
+        valor = st.session_state.get("mes_sel_widget")
+        if not valor or valor == "Todos":
+            return
+        fechas_mes = base_full.loc[base_full["MES"] == valor, "FECHA_INSCRIPCION"]
+        fechas_mes = pd.to_datetime(fechas_mes, errors="coerce", dayfirst=True).dt.date.dropna()
+        if len(fechas_mes):
+            st.session_state["fecha_ini_widget"] = max(f_min, fechas_mes.min())
+            st.session_state["fecha_fin_widget"] = min(f_max, fechas_mes.max())
+
+    st.session_state.setdefault("fecha_ini_widget", f_min)
+    st.session_state.setdefault("fecha_fin_widget", f_max)
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        fecha_ini = st.date_input("Desde", value=f_min, min_value=f_min, max_value=f_max)
+        fecha_ini = st.date_input("Desde", min_value=f_min, max_value=f_max, key="fecha_ini_widget")
     with col_f2:
-        fecha_fin = st.date_input("Hasta", value=f_max, min_value=f_min, max_value=f_max)
+        fecha_fin = st.date_input("Hasta", min_value=f_min, max_value=f_max, key="fecha_fin_widget")
 
     st.markdown("""<div class='sbh'>
         <div class='sbh-num' style='color:#34D399!important;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.22)'>02</div>
@@ -558,7 +615,10 @@ with st.sidebar:
 
     mes_presentes = base_full["MES"].dropna().unique().tolist() if "MES" in base_full.columns else []
     mes_valores = [m for m in _MES_ORDEN if m in mes_presentes] + sorted(m for m in mes_presentes if m not in _MES_ORDEN)
-    mes_sel = st.selectbox("Mes", ["Todos"] + mes_valores)
+    mes_sel = st.selectbox(
+        "Mes", ["Todos"] + mes_valores, key="mes_sel_widget",
+        on_change=_sincronizar_fechas_con_mes,
+    )
 
     coordinadores = ["Todos"] + sorted(base_full["COORDINADOR"].dropna().unique().tolist())
     coord_sel = st.selectbox("Coordinador", coordinadores)
@@ -940,9 +1000,19 @@ if mes_sel != "Todos":
     _base_avance = _base_avance[_base_avance["MES"] == mes_sel]
 if coord_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COORDINADOR"] == coord_sel]
+
+# Al filtrar por Mes, el avance vs. meta se recorta a ese mes aunque el rango
+# Desde/Hasta siga abierto — si no, la meta acumularía todos los meses del rango.
+avance_ini, avance_fin = fecha_ini, fecha_fin
+if mes_sel != "Todos" and mes_sel in _MES_ORDEN:
+    _m = _MES_ORDEN.index(mes_sel) + 1
+    _y = fecha_fin.year
+    avance_ini = max(fecha_ini, date(_y, _m, 1))
+    avance_fin = min(fecha_fin, date(_y, _m, calendar.monthrange(_y, _m)[1]))
+
 _fecha_insc_avance = pd.to_datetime(_base_avance["FECHA_INSCRIPCION"], errors="coerce", dayfirst=True).dt.date
-_base_avance = _base_avance[(_fecha_insc_avance >= fecha_ini) & (_fecha_insc_avance <= fecha_fin)]
-tabla, total_general = _tabla_avance(_base_avance, metas_full, fecha_ini, fecha_fin)
+_base_avance = _base_avance[(_fecha_insc_avance >= avance_ini) & (_fecha_insc_avance <= avance_fin)]
+tabla, total_general = _tabla_avance(_base_avance, metas_full, avance_ini, avance_fin)
 
 total_insc = len(b)
 pct_cruce = (b["CRUCE COMPL"].mean() * 100) if total_insc else 0
@@ -1082,7 +1152,7 @@ st.markdown(f"""
         <div class='sec-desc'>Meta mensual ÷ días hábiles del mes (lunes a sábado, sin festivos) × días hábiles del período seleccionado.</div>
     </div>
     <div class='sec-meta'>
-        <div class='sec-meta-val' style='color:{COLOR_PRIMARY}'>{_dias_habiles_rango(fecha_ini, fecha_fin)}/{_dias_habiles(fecha_fin.year, fecha_fin.month)}</div>
+        <div class='sec-meta-val' style='color:{COLOR_PRIMARY}'>{_dias_habiles_rango(avance_ini, avance_fin)}/{sum(_dias_habiles(a, m) for a, m in _meses_en_rango(avance_ini, avance_fin))}</div>
         <div class='sec-meta-lab'>Días hábiles</div>
     </div>
     <span class='sec-tag' style='background:{COLOR_PRIMARY}'>Plan vs. real</span>
