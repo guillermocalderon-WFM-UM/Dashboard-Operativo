@@ -306,9 +306,14 @@ def matriculas() -> pd.DataFrame:
     """Base de Matrículas: un archivo por mes (SHEETS_MATRICULAS_MES) + directorio
     maestro de expertos.
 
-    Todas las filas de "Base" son matrículas y se conservan. El experto/supervisor/
-    coordinador se resuelven contra el directorio maestro por "Usuario SIU" → "Usuario"
-    → nombre de "EXPERTO ASIGNADO". Lo no encontrado queda "Sin asignar".
+    Todas las filas de "Base" son matrículas y se conservan. El experto se resuelve
+    contra el directorio maestro por nombre de "EXPERTO ASIGNADO" → "Experto" →
+    "Usuario SIU" → "Usuario" (el nombre va primero porque "Usuario SIU" llega
+    contaminado con el usuario de otro asesor en parte de las filas). De ahí salen
+    supervisor y coordinador; si el experto no resuelve, se usan las columnas
+    "SUPERVISOR"/"Coordindor" de la Base mapeando el nombre corto ("Anyi Castano")
+    al nombre completo del directorio ("Anyi Paola Castaño"). Lo no encontrado queda
+    "Sin asignar".
     """
     meses_ids = SHEETS_MATRICULAS_MES
     _meses = list(meses_ids.keys())
@@ -331,18 +336,19 @@ def matriculas() -> pd.DataFrame:
     df = pd.concat(bases, ignore_index=True)
     dirm = _directorio_maestro(dirs)
 
-    # ── resolución vectorizada ──
-    k_siu = df["Usuario SIU"].map(_norm)
-    k_usr = df.get("Usuario", pd.Series("", index=df.index)).map(_norm)
+    # ── resolución vectorizada del experto ──
+    # El nombre de "EXPERTO ASIGNADO" resuelve mejor que "Usuario SIU" (esta última
+    # llega con el usuario de otro asesor en parte de las filas), así que va primero
+    # y el SIU queda de respaldo.
+    k_siu = df["Usuario SIU"].map(_norm).mask(lambda s: s.isin(_VACIO))
+    k_usr = df.get("Usuario", pd.Series("", index=df.index)).map(_norm).mask(lambda s: s.isin(_VACIO))
     k_ea = df["EXPERTO ASIGNADO"].map(_norm)
     k_exp = df.get("Experto", pd.Series("", index=df.index)).map(_norm)
 
-    invalida = k_siu.isin(_VACIO)
-    key = k_siu.mask(invalida, k_usr)
-
-    rec = key.map(dirm["siu"])
-    rec = rec.where(rec.notna(), k_ea.map(dirm["agente"]))
+    rec = k_ea.map(dirm["agente"])
     rec = rec.where(rec.notna(), k_exp.map(dirm["agente"]))
+    rec = rec.where(rec.notna(), k_siu.map(dirm["siu"]))
+    rec = rec.where(rec.notna(), k_usr.map(dirm["siu"]))
 
     def _campo(nombre, respaldo):
         val = rec.map(lambda r: r[nombre] if isinstance(r, dict) and r[nombre] else None)
@@ -352,6 +358,45 @@ def matriculas() -> pd.DataFrame:
     df["_ASESOR"] = _campo("asesor", "").where(lambda s: s.ne(""), ea_txt).replace("", "Sin asignar")
     df["_SUPERVISOR"] = _campo("supervisor", "Sin asignar")
     df["_COORDINADOR"] = _campo("coordinador", "Sin asignar")
+
+    # ── respaldo: columnas SUPERVISOR/Coordindor de la Base ──
+    # Traen "primer nombre + un apellido" sin tildes; se mapean al nombre completo del
+    # directorio exigiendo que todas sus palabras estén contenidas en el nombre largo
+    # (match único). Solo se usa cuando el experto no resolvió supervisor/coordinador.
+    _sup_full, _coord_full = set(), set()
+    for d in dirs:
+        if d is None:
+            continue
+        _sup_full |= {str(x).strip() for x in d.get("Supervisor", []) if _valido(x)}
+        _coord_full |= {str(x).strip() for x in d.get("Coordinador", []) if _valido(x)}
+
+    def _resolutor_nombre_corto(nombres_largos: set):
+        largos = [(f, set(_norm(f).split())) for f in nombres_largos]
+        cache: dict[str, str] = {}
+
+        def resolver(corto) -> str:
+            c = _norm(corto)
+            if c not in cache:
+                toks = set(c.split())
+                cand = [f for f, fn in largos if toks and toks <= fn]
+                cache[c] = cand[0] if len(cand) == 1 else ""
+            return cache[c]
+
+        return resolver
+
+    _res_sup = _resolutor_nombre_corto(_sup_full)
+    _res_coord = _resolutor_nombre_corto(_coord_full)
+
+    _col_sup = df.get("SUPERVISOR", pd.Series("", index=df.index)).fillna("").astype(str)
+    _col_coord = df.get("Coordindor", pd.Series("", index=df.index)).fillna("").astype(str)
+    _falta = df["_SUPERVISOR"].eq("Sin asignar")
+    df.loc[_falta, "_SUPERVISOR"] = (
+        _col_sup[_falta].map(_res_sup).replace("", pd.NA).fillna("Sin asignar")
+    )
+    _falta = df["_COORDINADOR"].eq("Sin asignar")
+    df.loc[_falta, "_COORDINADOR"] = (
+        _col_coord[_falta].map(_res_coord).replace("", pd.NA).fillna("Sin asignar")
+    )
     df["_DOC_ASESOR"] = rec.map(lambda r: r["documento"] if isinstance(r, dict) else "").fillna("")
     df["_CC"] = pd.to_numeric(df["_DOC_ASESOR"], errors="coerce").astype("Int64")
 
