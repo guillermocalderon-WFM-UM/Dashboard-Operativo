@@ -599,6 +599,7 @@ with st.sidebar:
             </div>
         </div>
         <div class='sbf-credit'><span class='sbf-spark'>⚡</span>Desarrollado por Workforce Management</div>
+        <div class='sbf-credit' style='margin-top:4px;opacity:0.7'>build e55c699 · experto por nombre</div>
     </div>
     """, unsafe_allow_html=True)
 
