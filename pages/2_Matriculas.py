@@ -1,8 +1,10 @@
 import base64
 import calendar
-import io
+import html
 from datetime import date, timedelta
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -26,31 +28,6 @@ _MES_ORDEN = [
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
 _MES_A_NUM = {mes: i + 1 for i, mes in enumerate(_MES_ORDEN)}
-
-
-# ─────────────────────────────────────────────
-# DESCARGA (idéntico a Inscripciones / Dashboard WFM)
-# ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
-def _excel_bytes(df):
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False, engine="openpyxl")
-    return buf.getvalue()
-
-
-def df_descarga(df, nombre_archivo, **kwargs):
-    st.dataframe(df, **kwargs)
-    b64 = base64.b64encode(_excel_bytes(df)).decode()
-    st.markdown(
-        f'<div style="text-align:right;margin-top:-6px;margin-bottom:8px">'
-        f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" '
-        f'download="{nombre_archivo}" '
-        f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em" '
-        f'onmouseover="this.style.color=\'rgba(255,255,255,0.75)\'" '
-        f'onmouseout="this.style.color=\'rgba(255,255,255,0.35)\'">'
-        f'↓ Exportar Excel</a></div>',
-        unsafe_allow_html=True,
-    )
 
 
 # ─────────────────────────────────────────────
@@ -182,280 +159,988 @@ def _render_tabla_avance(tabla: pd.DataFrame, total_general: pd.Series):
         st.markdown(table_html, unsafe_allow_html=True)
 
 
-def _fig_avance(tabla: pd.DataFrame) -> go.Figure:
-    d = tabla.copy()
-    d["gap"] = d["REAL"] - d["META"]
-    d = d.sort_values("gap")
+# ─────────────────────────────────────────────
+# CENTRO DE OPERACIONES — sistema visual "ebi-*" (mismo lenguaje de Inscripciones)
+# ─────────────────────────────────────────────
+GREEN = "#10B981"
+TEAL = "#34D399"
+BLUE = "#38BDF8"
+INDIGO = "#818CF8"
+AMBER = "#F59E0B"
+RED = "#F43F5E"
+MUTED = "#94A3B8"
+BG = "rgba(0,0,0,0)"
+MONTHS = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+WEEKDAYS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"]
+PALETTE = [BLUE, TEAL, INDIGO, AMBER, "#EC4899", "#22D3EE", "#A3E635", "#FB7185"]
 
-    x_abs_max = max(d["gap"].abs().max(), 1) * 1.25
-    fig = go.Figure(go.Bar(
-        x=d["gap"], y=d.index, orientation="h",
-        marker=dict(
-            color=d["gap"], colorscale=[[0, "#DC2626"], [0.5, "rgba(148,163,184,0.35)"], [1, "#059669"]],
-            cmid=0, cmin=-x_abs_max, cmax=x_abs_max,
-            line=dict(color="rgba(255,255,255,0.18)", width=1), cornerradius=8,
-        ),
-        width=0.62,
-        text=[f"{g:+d}" for g in d["gap"]],
-        textposition="outside",
-        textfont=dict(size=10.5, color="rgba(255,255,255,0.85)", family="Space Grotesk, sans-serif"),
-        cliponaxis=False,
-        hovertext=[
-            f"<b>{sup}</b><br>Real: {r}<br>Meta: {mt}<br>{'Faltan' if g < 0 else 'Por encima de meta'}: {abs(g)}"
-            for sup, r, mt, g in zip(d.index, d["REAL"], d["META"], d["gap"])
-        ],
-        hoverinfo="text",
-    ))
-    fig.add_vline(x=0, line_width=1, line_color="rgba(255,255,255,0.25)")
 
-    for i in range(len(d.index)):
-        if i % 2 == 0:
-            fig.add_shape(
-                type="rect", xref="paper", yref="y",
-                x0=0, x1=1, y0=i - 0.5, y1=i + 0.5,
-                fillcolor="rgba(255,255,255,0.025)", line_width=0, layer="below",
-            )
-
-    fig_h = max(260, len(d) * 24 + 50)
-    fig.update_layout(
-        height=fig_h,
-        margin=dict(l=190, r=60, t=6, b=28),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-        bargap=0.28,
-        font=dict(family="Inter, sans-serif"),
-        xaxis=dict(
-            range=[-x_abs_max, x_abs_max],
-            showgrid=True, gridcolor="rgba(255,255,255,0.045)", gridwidth=1, zeroline=False,
-            tickfont=dict(color="rgba(255,255,255,0.32)", size=9), fixedrange=True,
-            title=dict(text="Real − Meta", font=dict(size=10, color="rgba(255,255,255,0.35)")),
-        ),
-        yaxis=dict(showgrid=False, tickfont=dict(color="rgba(255,255,255,0.72)", size=10), fixedrange=True),
+def _layout(height: int = 360, **kwargs) -> dict:
+    out = dict(
+        height=height, paper_bgcolor=BG, plot_bgcolor=BG,
+        margin=dict(l=48, r=28, t=24, b=42),
+        font=dict(family="Inter", size=11, color="rgba(255,255,255,.72)"),
+        hoverlabel=dict(bgcolor="#0B2119", bordercolor="rgba(255,255,255,.16)", font_size=12),
+        legend=dict(orientation="h", y=1.10, x=0, font=dict(size=10)),
     )
-    return fig
+    out.update(kwargs)
+    return out
 
 
-def _fig_programa(b: pd.DataFrame) -> go.Figure:
-    top = b["Programa"].value_counts().head(10).sort_values()
-    fig = go.Figure(go.Bar(
-        x=top.values, y=[p[:42] for p in top.index], orientation="h",
-        marker=dict(color="#818CF8"),
-        text=top.values, textposition="outside", cliponaxis=False,
-        textfont=dict(size=10, color="#CBD3F2", family="Inter"),
-    ))
-    fig.update_layout(
-        height=340, margin=dict(l=10, r=50, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
+AXIS = dict(
+    gridcolor="rgba(255,255,255,.065)", zerolinecolor="rgba(255,255,255,.20)",
+    tickfont=dict(size=10, color="rgba(255,255,255,.56)"), automargin=True,
+)
+
+
+def _safe(value) -> str:
+    return html.escape(str(value))
+
+
+def _available_months(base: pd.DataFrame) -> list[str]:
+    """Meses con al menos una fecha valida en el universo global, incluidos parciales."""
+    source = base["_DATE"] if "_DATE" in base else base.get("_FECHA", pd.Series(dtype=object))
+    dates = pd.to_datetime(source, errors="coerce", dayfirst=True).dropna()
+    present = set(dates.dt.month.astype(int))
+    return [month for number, month in enumerate(MONTHS, 1) if number in present]
+
+
+def _exclusive_change(key: str, exclusive: str) -> None:
+    """Hace que Todos/Ninguna no puedan coexistir con opciones individuales."""
+    current = list(st.session_state.get(key, []))
+    previous = list(st.session_state.get(f"{key}__previous", []))
+    if exclusive in current and exclusive not in previous:
+        current = [exclusive]
+    elif exclusive in current and any(value != exclusive and value not in previous for value in current):
+        current = [value for value in current if value != exclusive]
+    st.session_state[key] = current
+    st.session_state[f"{key}__previous"] = current
+
+
+def _exclusive_multiselect(
+    label: str, options: list[str], key: str, exclusive: str,
+    default: list[str] | None = None, empty_means_all: bool = False, **kwargs,
+) -> list[str]:
+    choices = [exclusive] + options
+    valid = set(choices)
+    had_value = key in st.session_state
+    if had_value:
+        cleaned = [value for value in st.session_state[key] if value in valid]
+        if exclusive in cleaned and len(cleaned) > 1:
+            cleaned = [exclusive]
+        st.session_state[key] = cleaned
+    initial = list(default or [])
+    st.session_state.setdefault(f"{key}__previous", initial)
+    selected = st.multiselect(
+        label, choices, default=None if had_value else initial, key=key,
+        on_change=_exclusive_change, args=(key, exclusive), **kwargs,
     )
-    return fig
+    if exclusive in selected:
+        return options if exclusive == "Todos" else []
+    if not selected and empty_means_all:
+        return options
+    return [value for value in selected if value in options]
 
 
-def _fig_nivel(b: pd.DataFrame) -> go.Figure:
-    counts = b["Nivel Formación"].value_counts()
-    fig = go.Figure(go.Bar(
-        x=list(counts.index), y=list(counts.values),
-        marker=dict(color=COLOR_SUCCESS),
-        text=list(counts.values), textposition="outside", cliponaxis=False,
-        textfont=dict(size=11, color="#CBD3F2", family="Inter"),
-    ))
-    fig.update_layout(
-        height=340, margin=dict(l=40, r=10, t=30, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
+def _multiselect_all(label: str, options: list[str], key: str, default_all: bool = True) -> list[str]:
+    return _exclusive_multiselect(
+        label, options, key, "Todos", ["Todos"] if default_all else [],
+        empty_means_all=True,
     )
-    return fig
 
 
-def _cohorte_key(c: str):
-    """Ordena las cohortes '<Mes>-<Año>' cronológicamente."""
-    partes = str(c).split("-")
-    mes = _MES_A_NUM.get(partes[0].strip(), 99)
-    anio = int("".join(ch for ch in partes[-1] if ch.isdigit()) or 0)
-    return (anio, mes)
+def _rgba(hex_color: str, alpha: float) -> str:
+    value = hex_color.lstrip("#")
+    red, green, blue = (int(value[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({red},{green},{blue},{alpha})"
 
 
-def _fig_cohorte(b: pd.DataFrame) -> go.Figure:
-    counts = b["COHORTE"].value_counts()
-    counts = counts.reindex(sorted(counts.index, key=_cohorte_key))
-    fig = go.Figure(go.Bar(
-        x=list(counts.index), y=list(counts.values),
-        marker=dict(color="#818CF8"),
-        text=list(counts.values), textposition="outside", cliponaxis=False,
-        textfont=dict(size=11, color="#CBD3F2", family="Inter"),
-    ))
-    fig.update_layout(
-        height=340, margin=dict(l=40, r=10, t=30, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        showlegend=False,
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="Matrículas",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
+def _panel_title(icon: str, title: str, description: str, tag: str = "") -> None:
+    badge = f"<span class='ebi-tag'>{_safe(tag)}</span>" if tag else ""
+    st.markdown(
+        f"<div class='ebi-head'><div class='ebi-icon'>{icon}</div>"
+        f"<div class='ebi-copy'><div class='ebi-title'>{_safe(title)}</div>"
+        f"<div class='ebi-sub'>{_safe(description)}</div></div>{badge}</div>",
+        unsafe_allow_html=True,
     )
-    return fig
 
 
-def _fig_tendencia(b: pd.DataFrame) -> go.Figure:
-    d = b.dropna(subset=["_FECHA"])
-    serie = d.groupby(d["_FECHA"].dt.date).size().sort_index()
-    fig = go.Figure(go.Scatter(
-        x=list(serie.index), y=list(serie.values), mode="lines",
-        line=dict(color=COLOR_ACCENT, width=2, shape="spline"),
-        fill="tozeroy", fillcolor="rgba(14,165,233,0.10)",
-        hovertemplate="%{x|%d %b}<br>%{y} matrículas<extra></extra>",
-    ))
-    fig.update_layout(
-        height=280, margin=dict(l=50, r=20, t=10, b=30),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="Matrículas",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
+def _section(label: str, title: str) -> None:
+    st.markdown(
+        f"<div class='ebi-section'><span>{_safe(label)}</span><b>{_safe(title)}</b><i></i></div>",
+        unsafe_allow_html=True,
     )
-    return fig
 
 
-_DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+def _status(real: float, target: float) -> str:
+    if pd.isna(target) or target <= 0:
+        return "Sin meta"
+    ratio = real / target
+    return "Sobre meta" if ratio > 1.10 else ("En rango" if ratio >= .90 else "Bajo meta")
 
 
-def _fig_dia_semana(b: pd.DataFrame) -> go.Figure:
-    d = b.dropna(subset=["_FECHA"])
-    conteo = d["_FECHA"].dt.weekday.map(lambda i: _DIAS_ES[i]).value_counts().reindex(_DIAS_ES).fillna(0)
-    colores = [COLOR_DANGER if dia == "Domingo" else COLOR_ACCENT for dia in _DIAS_ES]
-    fig = go.Figure(go.Bar(
-        x=_DIAS_ES, y=conteo.values, marker=dict(color=colores),
-        text=[int(v) for v in conteo.values], textposition="outside", cliponaxis=False,
-        textfont=dict(size=11, color="#CBD3F2", family="Inter"),
-    ))
-    fig.update_layout(
-        height=300, margin=dict(l=40, r=10, t=30, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        showlegend=False,
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="Matrículas",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.62)"), automargin=True),
+def _status_color(status: str) -> str:
+    return {"Sobre meta": GREEN, "En rango": AMBER, "Bajo meta": RED}.get(status, MUTED)
+
+
+def _prepare(base: pd.DataFrame) -> pd.DataFrame:
+    d = base.copy()
+    d["_DATE"] = d["_FECHA"]
+    d = d.dropna(subset=["_DATE"]).copy()
+    d["_SUP"] = d["_SUPERVISOR"].fillna("Sin asignar").astype(str)
+    d["_COORD"] = d["_COORDINADOR"].fillna("Sin asignar").astype(str)
+    d["_AGENT"] = d["_ASESOR"].fillna("Sin asignar").astype(str)
+    d["_MONTH"] = d["_DATE"].dt.month.map(lambda n: MONTHS[n - 1])
+    d["_YEAR"] = d["_DATE"].dt.year
+    d["_DAY"] = d["_DATE"].dt.day
+    return d
+
+
+def _meta_rows(metas: pd.DataFrame, supervisors: list[str], months: list[str], agents: list[str] | None = None) -> pd.DataFrame:
+    m = metas.copy()
+    if "SUPERVISOR" not in m or "MES" not in m:
+        return pd.DataFrame()
+    m = m[m["SUPERVISOR"].astype(str).isin(supervisors) & m["MES"].isin(months)]
+    if agents and "NOMBRE ASESOR" in m:
+        m = m[m["NOMBRE ASESOR"].astype(str).isin(agents)]
+    cc = "CC" if "CC" in m else "_CC" if "_CC" in m else None
+    if cc:
+        m = m.drop_duplicates([cc, "MES", "AÑO"] if "AÑO" in m else [cc, "MES"])
+    m["_META"] = pd.to_numeric(m.get("Meta matriculas", 0), errors="coerce").fillna(0)
+    return m
+
+
+def _meta_by_supervisor(
+    metas: pd.DataFrame, supervisors: list[str], months: list[str], start: date, end: date,
+    reference: str, is_business_day, agents: list[str] | None = None,
+) -> pd.DataFrame:
+    m = _meta_rows(metas, supervisors, months, agents)
+    if m.empty:
+        return pd.DataFrame(columns=["_SUP", "_MONTH", "META"])
+    if "AÑO" not in m:
+        m["AÑO"] = end.year
+    if reference == "Meta acumulada al corte":
+        factors = {}
+        for month in months:
+            mn = MONTHS.index(month) + 1
+            years = m.loc[m["MES"] == month, "AÑO"].dropna().astype(int).unique()
+            for year in years:
+                last = calendar.monthrange(year, mn)[1]
+                mstart, mend = date(year, mn, 1), date(year, mn, last)
+                lo, hi = max(start, mstart), min(end, mend)
+                total = sum(is_business_day(mstart + timedelta(days=i)) for i in range(last))
+                covered = 0 if hi < lo else sum(is_business_day(lo + timedelta(days=i)) for i in range((hi - lo).days + 1))
+                factors[(month, year)] = covered / total if total else 0
+        m["_FACTOR"] = [factors.get((row.MES, int(row.AÑO)), 0) for row in m.itertuples()]
+    else:
+        m["_FACTOR"] = 1.0
+    m["META"] = m["_META"] * m["_FACTOR"]
+    return (
+        m.groupby(["SUPERVISOR", "MES"], as_index=False)["META"].sum()
+        .rename(columns={"SUPERVISOR": "_SUP", "MES": "_MONTH"})
     )
-    return fig
 
 
-_PALETA_SUPERVISORES = ["#38BDF8", "#818CF8", "#34D399", "#F59E0B", "#F472B6", "#A78BFA", "#FB923C", "#2DD4BF"]
-
-
-def _fig_supervisor_mes(base: pd.DataFrame, metas: pd.DataFrame) -> go.Figure:
-    """% cumplimiento (real / meta mensual completa) por supervisor y mes.
-    A diferencia de Inscripciones, aquí no hay un flag de completitud por registro
-    (toda fila de la Base ya es una matrícula) — el cumplimiento se mide contra la meta."""
-    d = base.dropna(subset=["MES", "_SUPERVISOR"]).copy()
-    top_sup = d["_SUPERVISOR"].value_counts().head(8).index.tolist()
-    d = d[d["_SUPERVISOR"].isin(top_sup)]
-    real = d.groupby(["MES", "_SUPERVISOR"]).size()
-    meses = [m for m in _MES_ORDEN if m in d["MES"].unique()]
-
-    _cols_meta_ok = {"SUPERVISOR", "CC", "MES", "AÑO", "Meta matriculas"}.issubset(metas.columns)
-    pct = {}
-    for mes in meses:
-        meta_sup = pd.Series(dtype=float)
-        if _cols_meta_ok:
-            anios_mes = d.loc[d["MES"] == mes, "AÑO"].dropna()
-            anio = int(anios_mes.mode().iat[0]) if len(anios_mes) else None
-            if anio is not None:
-                m_meta = metas[(metas["MES"] == mes) & (metas["AÑO"] == anio)]
-                meta_asesor = m_meta.dropna(subset=["SUPERVISOR", "CC"]).drop_duplicates("CC")
-                meta_sup = meta_asesor.groupby("SUPERVISOR")["Meta matriculas"].sum()
-        for sup in top_sup:
-            r = real.get((mes, sup), 0)
-            m = meta_sup.get(sup)
-            pct[(mes, sup)] = (r / m * 100) if m else None
-
-    fig = go.Figure()
-    for i, sup in enumerate(top_sup):
-        vals = [pct.get((mes, sup)) for mes in meses]
-        color = _PALETA_SUPERVISORES[i % len(_PALETA_SUPERVISORES)]
-        fig.add_trace(go.Scatter(
-            x=meses, y=vals, mode="lines+markers", name=sup, connectgaps=False,
-            line=dict(color=color, width=2.5, shape="spline", smoothing=0.9),
-            marker=dict(size=6, color=color, line=dict(color="rgba(8,6,15,0.6)", width=1)),
-            hovertemplate=f"<b>{sup}</b><br>%{{x}}: %{{y:.0f}}% cumplimiento<extra></extra>",
-        ))
-    fig.update_layout(
-        height=400, margin=dict(l=50, r=40, t=10, b=40),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    font=dict(size=9, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
-                   range=[-0.4, len(meses) - 0.6], automargin=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.06)", title="% Cumplimiento", ticksuffix="%",
-                   tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=True),
+def _supervisor_month(base: pd.DataFrame, supervisors: list[str], months: list[str]) -> pd.DataFrame:
+    grid = pd.MultiIndex.from_product([supervisors, months], names=["_SUP", "_MONTH"]).to_frame(index=False)
+    observed = (
+        base[base["_SUP"].isin(supervisors) & base["_MONTH"].isin(months)]
+        .groupby(["_SUP", "_MONTH"]).size().rename("REAL")
     )
-    return fig
+    return grid.join(observed, on=["_SUP", "_MONTH"])
 
 
-def _mapa_supervisor_coordinador(base: pd.DataFrame) -> pd.Series:
-    d = base.dropna(subset=["_SUPERVISOR", "_COORDINADOR"])
-    return d.groupby("_SUPERVISOR")["_COORDINADOR"].agg(lambda s: s.mode().iat[0])
+def _supervisor_daily(base, metas, supervisors, months, start, end, is_business_day, reference, meta_agents=None):
+    subset = base[base["_SUP"].isin(supervisors) & base["_MONTH"].isin(months)].copy()
+    if subset.empty:
+        return pd.DataFrame()
+    last_observed = min(end, base["_DATE"].max().date())
+    first_observed = max(start, base["_DATE"].min().date())
+    dates = [
+        ts.date() for ts in pd.date_range(first_observed, last_observed, freq="D")
+        if MONTHS[ts.month - 1] in months
+    ]
+    grid = pd.MultiIndex.from_product([supervisors, dates], names=["_SUP", "_DAY_DATE"]).to_frame(index=False)
+    subset["_DAY_DATE"] = subset["_DATE"].dt.date
+    observed = subset.groupby(["_SUP", "_DAY_DATE"]).size().rename("REAL")
+    out = grid.join(observed, on=["_SUP", "_DAY_DATE"])
+    out["_DATE_X"] = pd.to_datetime(out["_DAY_DATE"], errors="coerce")
+    out["_MONTH"] = out["_DAY_DATE"].map(lambda d: MONTHS[d.month - 1])
+    monthly = _meta_by_supervisor(
+        metas, supervisors, months, start, end, "Meta mensual", is_business_day, meta_agents,
+    ).rename(columns={"META": "META_MONTH"})
+    out = out.merge(monthly, how="left", on=["_SUP", "_MONTH"])
+    business_counts = {}
+    for dt in dates:
+        key = (dt.year, dt.month)
+        if key not in business_counts:
+            days = calendar.monthrange(*key)[1]
+            business_counts[key] = sum(is_business_day(date(dt.year, dt.month, n)) for n in range(1, days + 1))
+    out["IS_BUSINESS"] = out["_DAY_DATE"].map(is_business_day)
+    out["META"] = [
+        (float(mm) / business_counts.get((dt.year, dt.month), 1)) if business and pd.notna(mm) else np.nan
+        for dt, mm, business in zip(out["_DAY_DATE"], out["META_MONTH"], out["IS_BUSINESS"])
+    ]
+    if reference == "Meta acumulada al corte":
+        out = out.sort_values(["_SUP", "_DAY_DATE"])
+        out["REAL"] = out.groupby("_SUP")["REAL"].cumsum()
+        out["META"] = out["META"].fillna(0).groupby(out["_SUP"]).cumsum()
+    return out
 
 
-def _fig_coordinador(tabla: pd.DataFrame, mapa_sup_coord: pd.Series) -> go.Figure:
-    d = tabla.copy()
-    d["_COORDINADOR"] = d.index.map(mapa_sup_coord)
-    d = d.dropna(subset=["_COORDINADOR"])
-    grp = d.groupby("_COORDINADOR")[["REAL", "FALTAN"]].sum().sort_values("REAL")
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=grp.index, x=grp["REAL"], orientation="h", name="Real",
-        marker=dict(color=COLOR_SUCCESS),
-    ))
-    fig.add_trace(go.Bar(
-        y=grp.index, x=grp["FALTAN"], orientation="h", name="Faltan para la meta",
-        marker=dict(color=COLOR_WARNING),
-    ))
-    fig.update_layout(
-        barmode="stack", height=300, margin=dict(l=10, r=20, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
-                   automargin=True),
-    )
-    return fig
-
-
-def _iniciales(nombre) -> str:
-    partes = str(nombre).strip().split()
-    if not partes:
-        return "?"
-    return (partes[0][0] + (partes[1][0] if len(partes) > 1 else "")).upper()
-
-
-def _top_lista_html(filas: list[tuple[str, str, str]], color: str) -> str:
-    rows = []
-    for i, (nombre, meta, valor) in enumerate(filas, start=1):
-        rows.append(
-            f"<div class='top-row' style='--ac:{color}'>"
-            f"<span class='top-rank'>{i:02d}</span>"
-            f"<div class='top-avatar'>{_iniciales(nombre)}</div>"
-            f"<div class='top-body'><div class='top-name'>{nombre}</div><div class='top-meta'>{meta}</div></div>"
-            f"<span class='top-value' style='color:{color}'>{valor}</span>"
-            "</div>"
+def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
+    _panel_title("📈", "Cumplimiento por Supervisor", "Matriculas diarias o mensuales frente a la zona objetivo.", "REAL vs META")
+    supervisors = sorted(x for x in base["_SUP"].unique() if x != "Sin asignar")
+    months = _available_months(base)
+    c1, c2, c3 = st.columns([2.3, .8, 1.4])
+    with c1:
+        selected = _exclusive_multiselect(
+            "Supervisor", supervisors, "mat_v3_sup_series", "Todos", ["Todos"],
+            placeholder="Selecciona uno o varios supervisores",
         )
-    return "<div class='top-list'>" + "".join(rows) + "</div>"
+    with c2:
+        granularity = st.selectbox("Granularidad", ["Mensual", "Diario"], key="mat_v3_sup_gran")
+    with c3:
+        selected_months = _multiselect_all("Meses", months, "mat_v2_sup_months")
+        selected_months = [month for month in months if month in selected_months]
+    references = ["Meta diaria", "Meta acumulada al corte", "Sin meta"] if granularity == "Diario" else ["Meta mensual", "Meta acumulada al corte", "Sin meta"]
+    c4, c5, c6 = st.columns([1.2, 1.05, 1.5])
+    with c4:
+        reference = st.selectbox("Referencia / Meta", references, key="mat_v2_sup_ref")
+    with c5:
+        view = st.selectbox("Visualizacion", ["Real + Meta", "Solo Real", "Brecha"], key="mat_v2_sup_view")
+    with c6:
+        bands = _exclusive_multiselect("Bandas de meta", selected, "mat_v2_sup_band", "Ninguna", ["Ninguna"])
+    if not selected:
+        st.info("Selecciona uno o varios supervisores para comparar su comportamiento.")
+        return
+    if not selected_months:
+        st.info("No hay meses disponibles dentro de los filtros globales.")
+        return
+    chips = "".join(f"<span style='--dot:{PALETTE[i % len(PALETTE)]}'>● {_safe(s)}</span>" for i, s in enumerate(selected)) if len(selected) <= 5 else f"<span>{len(selected)} supervisores seleccionados</span>"
+    st.markdown(f"<div class='ebi-selected'>{chips}</div>", unsafe_allow_html=True)
+    if granularity == "Diario":
+        d = _supervisor_daily(base, metas, selected, selected_months, start, end, is_business_day, reference, global_agents)
+        xcol, sort_col = "_DATE_X", "_DATE_X"
+        order = sorted(d["_DATE_X"].dropna().unique()) if len(d) else []
+    else:
+        d = _supervisor_month(base, selected, selected_months)
+        meta = _meta_by_supervisor(metas, selected, selected_months, start, end, reference, is_business_day, global_agents)
+        d = d.merge(meta, how="left", on=["_SUP", "_MONTH"])
+        # La etiqueta del mes nunca se usa para ordenar la trayectoria.
+        d["_MONTH_ORDER"] = d["_MONTH"].map({month: pos for pos, month in enumerate(MONTHS)})
+        xcol, sort_col, order = "_MONTH", "_MONTH_ORDER", selected_months
+    if reference == "Sin meta":
+        d["META"] = np.nan
+    elif granularity == "Mensual":
+        d["META"] = d["META"].fillna(0)
+    d["LOW"] = d["META"] * .9; d["HIGH"] = d["META"] * 1.1
+    d["GAP"] = d["REAL"] - d["META"]
+    d["PCT"] = np.where(d["META"] > 0, d["REAL"] / d["META"] * 100, np.nan)
+    d["STATUS"] = [_status(r, m) for r, m in zip(d["REAL"], d["META"])]
+    fig = go.Figure()
+    color_by_supervisor = {sup: PALETTE[i % len(PALETTE)] for i, sup in enumerate(selected)}
+    active_bands = bands if reference != "Sin meta" and view == "Real + Meta" else []
+    for band_supervisor in active_bands:
+        f = d[d["_SUP"] == band_supervisor].sort_values(sort_col).copy()
+        # La referencia visual interpola solo huecos no laborables para formar un
+        # corredor continuo; los valores productivos y la meta de días hábiles no cambian.
+        visual_meta = f["META"].interpolate(limit_direction="both") if granularity == "Diario" else f["META"]
+        f["BAND_META"] = visual_meta; f["BAND_LOW"] = visual_meta * .9; f["BAND_HIGH"] = visual_meta * 1.1
+        color = color_by_supervisor[band_supervisor]
+        band_custom = np.column_stack([f["BAND_META"], f["BAND_LOW"], f["BAND_HIGH"]])
+        band_time = "%{x|%d/%m/%Y}" if granularity == "Diario" else "%{x}"
+        fig.add_scatter(x=f[xcol], y=f["BAND_HIGH"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
+        fig.add_scatter(x=f[xcol], y=f["BAND_LOW"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), fill="tonexty", fillcolor=_rgba(color,.07), customdata=band_custom, hovertemplate=f"<b>{_safe(band_supervisor)}</b><br>{band_time}<br>Meta: %{{customdata[0]:,.1f}}<br>Rango: %{{customdata[1]:,.1f}} – %{{customdata[2]:,.1f}}<extra>Banda de tolerancia ±10 %</extra>", showlegend=False)
+        fig.add_scatter(x=f[xcol], y=f["BAND_META"], mode="lines", line=dict(color=_rgba(color,.72), width=1.4, dash="dashdot", shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
+    if view == "Brecha" and reference != "Sin meta":
+        fig.add_hline(y=0, line=dict(color=INDIGO, width=1.5, dash="dash"))
+    for i, sup in enumerate(selected):
+        s = d[d["_SUP"] == sup].sort_values(sort_col)
+        y = s["GAP"] if view == "Brecha" and reference != "Sin meta" else s["REAL"]
+        custom = np.column_stack([s["REAL"], s["META"], s["LOW"], s["HIGH"], s["GAP"], s["PCT"], s["STATUS"]])
+        time_hover = "%{x|%d/%m/%Y}<br>Mes: %{x|%B}" if granularity == "Diario" else "Mes: %{x}"
+        fig.add_scatter(
+            x=s[xcol], y=y, mode="lines+markers", name=sup, showlegend=True,
+            connectgaps=False,
+            line=dict(color=color_by_supervisor[sup], width=2.6, shape="spline", smoothing=.35),
+            marker=dict(symbol="circle", size=5.5, color=color_by_supervisor[sup], opacity=.82, line=dict(color="#071712", width=.8)),
+            customdata=custom,
+            hovertemplate=("<b>%{fullData.name}</b><br>" + time_hover + "<br>Real: %{customdata[0]:,.0f}<br>Meta esperada: %{customdata[1]:,.1f}"
+                           "<br>Rango objetivo: %{customdata[2]:,.1f} – %{customdata[3]:,.1f}<br>Brecha: %{customdata[4]:+,.1f}"
+                           "<br>Cumplimiento: %{customdata[5]:.1f} %<br>Estado: %{customdata[6]}<extra></extra>"),
+        )
+    xaxis = {**AXIS, "tickformat": "%d %b", "nticks": 16} if granularity == "Diario" else {**AXIS, "categoryorder": "array", "categoryarray": order}
+    ytitle = "Brecha" if view == "Brecha" else ("Matriculas acumuladas" if reference == "Meta acumulada al corte" and granularity == "Diario" else "Matriculas")
+    fig.update_layout(**_layout(455, margin=dict(l=52, r=28, t=12, b=45)), showlegend=True, hovermode="closest", xaxis=xaxis, yaxis={**AXIS, "title": ytitle})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def _coord_map(base: pd.DataFrame) -> dict[str, str]:
+    d = base[(base["_SUP"] != "Sin asignar") & (base["_COORD"] != "Sin asignar")]
+    if d.empty:
+        return {}
+    return d.groupby("_SUP")["_COORD"].agg(lambda s: s.mode().iat[0]).to_dict()
+
+
+def _coordinator_data(base, metas, coords, months, start, end, is_business_day, meta_agents=None, reference="Meta acumulada al corte"):
+    b = base[base["_COORD"].isin(coords) & base["_MONTH"].isin(months)]
+    real = b.groupby(["_COORD", "_MONTH"]).size().rename("REAL").reset_index()
+    sups = sorted(b["_SUP"].unique())
+    mm = _meta_by_supervisor(metas, sups, months, start, end, reference, is_business_day, meta_agents)
+    mapping = _coord_map(b)
+    mm["_COORD"] = mm["_SUP"].map(mapping)
+    mt = mm.groupby(["_COORD", "_MONTH"])["META"].sum().reset_index()
+    d = real.merge(mt, how="outer", on=["_COORD", "_MONTH"]).fillna(0)
+    d["GAP"] = d["REAL"] - d["META"]
+    d["PCT"] = np.where(d["META"] > 0, d["REAL"] / d["META"] * 100, np.nan)
+    return d
+
+
+def _render_coordinator(base, metas, start, end, is_business_day, meta_agents=None):
+    _panel_title("🧭", "Cumplimiento por Coordinador", "Produccion, meta y brecha por frente de coordinacion.", "BULLET")
+    coords = sorted(x for x in base["_COORD"].unique() if x != "Sin asignar")
+    months = _available_months(base)
+    c1, c2, c3, c4 = st.columns([1.6, 1.3, 1.2, 1.1])
+    with c1: selected = _multiselect_all("Coordinador", coords, "mat_v2_coord")
+    with c2:
+        selected_months = _multiselect_all("Mes", months, "mat_v2_coord_month")
+        selected_months = [month for month in months if month in selected_months]
+    with c3: order = st.selectbox("Ordenar por", ["Mayor produccion", "Mayor cumplimiento", "Mayor deficit", "Mayor superavit", "Alfabetico"], key="mat_v2_coord_order")
+    with c4: view = st.selectbox("Vista", ["Real vs Meta", "Brecha", "Evolucion"], key="mat_v2_coord_view")
+    if not selected or not selected_months:
+        st.info("No hay coordinadores disponibles para esta seleccion."); return
+    d = _coordinator_data(base, metas, selected, selected_months, start, end, is_business_day, meta_agents)
+    if view == "Evolucion":
+        fig = go.Figure()
+        for i, coord in enumerate(selected):
+            s = d[d["_COORD"] == coord].set_index("_MONTH").reindex(selected_months).reset_index()
+            fig.add_scatter(x=selected_months, y=s["REAL"], mode="lines+markers", name=coord, line=dict(width=2.5, color=PALETTE[i % len(PALETTE)], shape="spline", smoothing=.55), customdata=np.column_stack([s["META"], s["GAP"], s["PCT"]]), hovertemplate="<b>%{fullData.name}</b><br>%{x}<br>Real: %{y:,.0f}<br>Meta: %{customdata[0]:,.0f}<br>Brecha: %{customdata[1]:+,.0f}<br>Cumplimiento: %{customdata[2]:.1f}%<extra></extra>")
+        fig.update_layout(**_layout(380), xaxis=AXIS, yaxis={**AXIS, "title": "Matriculas"})
+    else:
+        a = d.groupby("_COORD", as_index=False)[["REAL", "META"]].sum(); a["GAP"] = a["REAL"] - a["META"]; a["PCT"] = np.where(a["META"] > 0, a["REAL"] / a["META"] * 100, np.nan)
+        if order == "Mayor produccion": a = a.sort_values("REAL")
+        elif order == "Mayor cumplimiento": a = a.sort_values("PCT")
+        elif order == "Mayor deficit": a = a.sort_values("GAP", ascending=False)
+        elif order == "Mayor superavit": a = a.sort_values("GAP")
+        else: a = a.sort_values("_COORD", ascending=False)
+        if view == "Brecha":
+            colors = [GREEN if x >= 0 else RED for x in a["GAP"]]
+            fig = go.Figure(go.Bar(x=a["GAP"], y=a["_COORD"], orientation="h", marker_color=colors, customdata=np.column_stack([a["REAL"], a["META"], a["PCT"]]), hovertemplate="<b>%{y}</b><br>Brecha: %{x:+,.0f}<br>Real: %{customdata[0]:,.0f}<br>Meta: %{customdata[1]:,.0f}<br>Cumplimiento: %{customdata[2]:.1f}%<extra></extra>"))
+            fig.add_vline(x=0, line=dict(color="white", width=1))
+        else:
+            fig = go.Figure()
+            xmax = max(float(a[["REAL", "META"]].max().max()) * 1.18, 1)
+            for idx, row in enumerate(a.itertuples()):
+                for lo, hi, color in [(0, .9, "rgba(244,63,94,.08)"), (.9, 1, "rgba(245,158,11,.09)"), (1, 1.1, "rgba(16,185,129,.09)"), (1.1, xmax / max(row.META, 1), "rgba(56,189,248,.07)")]:
+                    x0, x1 = lo * row.META, min(hi * row.META, xmax)
+                    if x1 > x0: fig.add_shape(type="rect", x0=x0, x1=x1, y0=idx-.37, y1=idx+.37, fillcolor=color, line_width=0, layer="below")
+            fig.add_bar(x=a["REAL"], y=a["_COORD"], orientation="h", marker_color=BLUE, width=.34, name="Real", customdata=np.column_stack([a["META"], a["GAP"], a["PCT"]]), hovertemplate="<b>%{y}</b><br>Real: %{x:,.0f}<br>Meta: %{customdata[0]:,.0f}<br>Brecha: %{customdata[1]:+,.0f}<br>Cumplimiento: %{customdata[2]:.1f}%<extra></extra>")
+            fig.add_scatter(x=a["META"], y=a["_COORD"], mode="markers", marker=dict(symbol="line-ns-open", size=22, color="white", line=dict(width=3)), name="Meta", hovertemplate="%{y}<br>Meta: %{x:,.0f}<extra></extra>")
+        fig.update_layout(**_layout(max(300, len(a)*62)), xaxis=AXIS, yaxis={**AXIS, "title": ""}, barmode="overlay")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def _business_dates(year: int, month: int, cutoff: date, is_business_day) -> list[date]:
+    end = min(date(year, month, calendar.monthrange(year, month)[1]), cutoff)
+    if end < date(year, month, 1): return []
+    return [date(year, month, d) for d in range(1, end.day + 1) if is_business_day(date(year, month, d))]
+
+
+def _render_weekday(base, is_business_day):
+    _panel_title("🗓️", "Comportamiento por Dia de la Semana", "Promedios comparables por dia habil y patrones por equipo.", "PATRON")
+    months = _available_months(base)
+    c1, c2, c3 = st.columns(3)
+    with c1: metric = st.selectbox("Metrica", ["Promedio diario", "Total"], key="mat_v2_w_metric")
+    with c2: compare = st.selectbox("Comparar", ["General", "Coordinadores", "Supervisores"], key="mat_v2_w_compare")
+    with c3:
+        selected_months = _multiselect_all("Mes", months, "mat_v2_w_month")
+        selected_months = [month for month in months if month in selected_months]
+    d = base[base["_MONTH"].isin(selected_months)].copy(); d = d[d["_DATE"].dt.date.map(is_business_day)]
+    d["_WD"] = d["_DATE"].dt.weekday.map(dict(enumerate(WEEKDAYS)))
+    # Denominador calendario: incluye dias habiles observados con produccion cero.
+    # El rango termina en la ultima fecha real, por lo que nunca convierte futuro en cero.
+    denom = {wd: 0 for wd in WEEKDAYS}
+    if len(d):
+        for dt in pd.date_range(d["_DATE"].min().normalize(), d["_DATE"].max().normalize(), freq="D"):
+            day = dt.date()
+            wd = dict(enumerate(WEEKDAYS)).get(dt.weekday())
+            if wd and is_business_day(day) and MONTHS[dt.month - 1] in selected_months:
+                denom[wd] += 1
+    group = "_COORD" if compare == "Coordinadores" else "_SUP" if compare == "Supervisores" else None
+    groups = ["General"] if group is None else sorted(x for x in d[group].unique() if x != "Sin asignar")
+    rows = []
+    for g in groups:
+        dg = d if group is None else d[d[group] == g]
+        for wd in WEEKDAYS:
+            total = len(dg[dg["_WD"] == wd])
+            value = total / max(denom[wd], 1) if metric == "Promedio diario" else total
+            rows.append((g, wd, value, total))
+    out = pd.DataFrame(rows, columns=["GRUPO", "DIA", "VALOR", "TOTAL"])
+    if compare == "General":
+        fig = go.Figure(go.Bar(x=WEEKDAYS, y=out["VALOR"], marker_color=[BLUE, BLUE, TEAL, TEAL, INDIGO, AMBER], customdata=out[["TOTAL"]], hovertemplate="%{x}<br>Valor: %{y:.1f}<br>Total: %{customdata[0]}<extra></extra>"))
+    else:
+        p = out.pivot(index="GRUPO", columns="DIA", values="VALOR").reindex(columns=WEEKDAYS).fillna(0)
+        fig = go.Figure(go.Heatmap(z=p.values, x=p.columns, y=p.index, colorscale=[[0,"#0B2A21"],[.45,"#0EA5E9"],[1,"#6EE7B7"]], colorbar=dict(title=metric, thickness=10), text=np.round(p.values,1), texttemplate="%{text}", hovertemplate="%{y}<br>%{x}: %{z:.1f}<extra></extra>"))
+    fig.update_layout(**_layout(max(330, len(groups)*38)), xaxis=AXIS, yaxis=AXIS)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def _render_trend(base):
+    _panel_title("〽️", "Tendencia Diaria", "Produccion observada de un unico mes; el futuro permanece vacio.", "DIARIO")
+    months = _available_months(base)
+    c1, c2, c3 = st.columns(3)
+    with c1: month = st.selectbox("Mes", months, index=max(len(months)-1,0), key="mat_v2_t_month") if months else None
+    with c2: visual = st.selectbox("Visual", ["Barras", "Linea"], key="mat_v2_t_visual")
+    with c3: smooth = st.selectbox("Suavizado", ["Ninguno", "Media movil 7 dias"], key="mat_v2_t_smooth")
+    if not month: st.info("Sin meses disponibles."); return None
+    d = base[base["_MONTH"] == month].copy(); last = d["_DATE"].max().date()
+    first = date(last.year, last.month, 1); idx = pd.date_range(first, last, freq="D")
+    daily = d.groupby(d["_DATE"].dt.normalize()).size().reindex(idx, fill_value=0).rename("TOTAL").to_frame()
+    daily["MM7"] = daily["TOTAL"].rolling(7, min_periods=1).mean()
+    daily["DOW"] = daily.index.day_name()
+    fig = go.Figure()
+    custom = np.column_stack([daily["TOTAL"], daily["MM7"], daily["DOW"]])
+    hover = "%{x|%d/%m/%Y}<br>Matriculas: %{customdata[0]}<br>Media movil: %{customdata[1]:.1f}<br>%{customdata[2]}<extra></extra>"
+    y = daily["MM7"] if smooth != "Ninguno" else daily["TOTAL"]
+    if visual == "Linea":
+        fig.add_scatter(x=daily.index, y=y, mode="lines+markers", line=dict(color=BLUE,width=3,shape="spline",smoothing=.55), marker=dict(size=6), customdata=custom, hovertemplate=hover)
+    else:
+        fig.add_bar(x=daily.index, y=y, marker_color=GREEN, customdata=custom, hovertemplate=hover)
+        if smooth != "Ninguno":
+            fig.add_scatter(x=daily.index, y=daily["MM7"], mode="lines", line=dict(color=BLUE,width=2.5,shape="spline",smoothing=.55), name="Media movil 7d", customdata=custom, hovertemplate=hover)
+    fig.update_layout(**_layout(390), xaxis={**AXIS,"dtick":86400000}, yaxis={**AXIS,"title":"Matriculas"})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    return month
+
+
+def _gap_data(base, metas, month, level, start, end, is_business_day, meta_agents=None):
+    d = base[base["_MONTH"] == month]
+    supervisors = sorted(d["_SUP"].unique())
+    mm = _meta_by_supervisor(metas, supervisors, [month], start, end, "Meta acumulada al corte", is_business_day, meta_agents)
+    real = d.groupby("_SUP").size().rename("REAL").reset_index()
+    x = real.merge(mm.groupby("_SUP")["META"].sum().reset_index(), how="outer", on="_SUP").fillna(0)
+    if level == "Coordinador":
+        mapping = _coord_map(d); x["NIVEL"] = x["_SUP"].map(mapping).fillna("Sin asignar"); x = x.groupby("NIVEL",as_index=False)[["REAL","META"]].sum()
+    else: x = x.rename(columns={"_SUP":"NIVEL"})
+    x["GAP"] = x["REAL"] - x["META"]; x["PCT_GAP"] = np.where(x["META"]>0, x["GAP"]/x["META"]*100, np.nan)
+    x["STATUS"] = [_status(r,m) for r,m in zip(x["REAL"],x["META"])]
+    return x
+
+
+def _render_gap(base, metas, start, end, is_business_day, meta_agents=None):
+    _panel_title("⚖️", "Brecha Real vs Meta", "Cero representa la meta; izquierda es deficit y derecha superavit.", "INTERVENCION")
+    months = _available_months(base)
+    c1,c2,c3,c4,c5 = st.columns(5)
+    with c1: level=st.selectbox("Nivel",["Supervisor","Coordinador"],key="mat_v2_g_level")
+    with c2: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v2_g_month") if months else None
+    with c3: show=st.selectbox("Mostrar",["Todos","Solo bajo meta","En riesgo","Sobre meta"],key="mat_v2_g_show")
+    with c4: order=st.selectbox("Orden",["Mayor deficit","Mayor superavit","Alfabetico"],key="mat_v2_g_order")
+    with c5: unit=st.selectbox("Unidad",["Matriculas","Porcentaje"],key="mat_v2_g_unit")
+    if not month: return
+    x=_gap_data(base,metas,month,level,start,end,is_business_day,meta_agents)
+    if show=="Solo bajo meta": x=x[x["STATUS"]=="Bajo meta"]
+    elif show=="En riesgo": x=x[x["STATUS"]=="En rango"]
+    elif show=="Sobre meta": x=x[x["STATUS"]=="Sobre meta"]
+    if order=="Mayor deficit": x=x.sort_values("GAP",ascending=False)
+    elif order=="Mayor superavit": x=x.sort_values("GAP")
+    else: x=x.sort_values("NIVEL",ascending=False)
+    counts=x["STATUS"].value_counts()
+    st.markdown(f"<div class='ebi-kpis'><span><b style='color:{GREEN}'>{counts.get('Sobre meta',0)}</b> SOBRE META</span><span><b style='color:{AMBER}'>{counts.get('En rango',0)}</b> EN RANGO</span><span><b style='color:{RED}'>{counts.get('Bajo meta',0)}</b> BAJO META</span></div>",unsafe_allow_html=True)
+    val=x["PCT_GAP"] if unit=="Porcentaje" else x["GAP"]
+    fig=go.Figure(go.Bar(x=val,y=x["NIVEL"],orientation="h",marker_color=[_status_color(s) for s in x["STATUS"]],customdata=np.column_stack([x["REAL"],x["META"],x["GAP"],x["PCT_GAP"],x["STATUS"]]),hovertemplate="<b>%{y}</b><br>Real: %{customdata[0]:,.0f}<br>Meta: %{customdata[1]:,.0f}<br>Brecha: %{customdata[2]:+,.0f}<br>Brecha %: %{customdata[3]:+.1f}%<br>%{customdata[4]}<extra></extra>"))
+    fig.add_vrect(x0=-10 if unit=="Porcentaje" else -float(x["META"].mean()*.1 if len(x) else 0),x1=10 if unit=="Porcentaje" else float(x["META"].mean()*.1 if len(x) else 0),fillcolor="rgba(99,102,241,.10)",line_width=0,layer="below")
+    fig.add_vline(x=0,line=dict(color="white",width=1.5)); fig.update_layout(**_layout(max(330,len(x)*38)),xaxis=AXIS,yaxis=AXIS)
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _heatmap(base, row_col, rows, month, is_business_day, key, observed_through=None):
+    d=base[base["_MONTH"]==month].copy()
+    if d.empty: st.info("Sin datos para el mes seleccionado."); return None
+    if not rows: st.info("No hay responsables disponibles para construir la matriz."); return None
+    year=int(d["_YEAR"].mode().iat[0]); last_data=observed_through or d["_DATE"].max().date(); days=calendar.monthrange(year,MONTHS.index(month)+1)[1]
+    grouped=d.groupby([row_col,"_DAY"]).size()
+    pv=grouped.unstack(fill_value=0).reindex(index=rows,columns=range(1,days+1),fill_value=0)
+    z=pv.astype(float).values; text=pv.astype(str).values.astype(object)
+    custom=np.empty((len(rows),days,2),dtype=object)
+    hover=np.empty((len(rows),days),dtype=object)
+    for i in range(len(rows)):
+        for j,day in enumerate(range(1,days+1)):
+            custom[i,j]=[day,int(pv.iat[i,j])]
+            hover[i,j]=(f"<b>{_safe(rows[i])}</b><br>{day:02d}/{MONTHS.index(month)+1:02d}/{year}<br>Matriculas: {custom[i,j,1]}")
+    for j,day in enumerate(range(1,days+1)):
+        dt=date(year,MONTHS.index(month)+1,day)
+        if dt>last_data:
+            z[:,j]=-2; text[:,j]=""
+            for i,row in enumerate(rows): hover[i,j]=f"<b>{_safe(row)}</b><br>{dt:%d/%m/%Y}<br>Futuro / sin informacion"
+        elif not is_business_day(dt):
+            z[:,j]=-1; text[:,j]="·"
+            for i,row in enumerate(rows): hover[i,j]=f"<b>{_safe(row)}</b><br>{dt:%d/%m/%Y}<br>Dia no laborable"
+    vmax=max(float(np.nanmax(z)),1)
+    colors=[[0,"#07130F"],[1/(vmax+2)-.001,"#07130F"],[1/(vmax+2),"#334155"],[2/(vmax+2)-.001,"#334155"],[2/(vmax+2),"#7F1D2D"],[min(1,3/(vmax+2)),"#064E3B"],[1,"#34D399"]]
+    fig=go.Figure(go.Heatmap(z=z,x=[f"{i:02d}" for i in range(1,days+1)],y=rows,zmin=-2,zmax=vmax,colorscale=colors,showscale=True,colorbar=dict(title="Matriculas",thickness=10,tick0=0,dtick=max(1,int(np.ceil(vmax/5)))),text=text,texttemplate="%{text}",customdata=custom,hovertext=hover,hovertemplate="%{hovertext}<extra></extra>",xgap=2,ygap=2))
+    fig.update_layout(**_layout(max(320,len(rows)*31+110),margin=dict(l=150,r=30,t=20,b=45)),xaxis={**AXIS,"side":"top"},yaxis=AXIS)
+    event=st.plotly_chart(fig,width="stretch",config={"displayModeBar":False},key=key,on_select="rerun",selection_mode="points")
+    try:
+        point=event.selection.points[0]
+        cell=point.get("customdata")
+        day=cell[0] if isinstance(cell,(list,tuple)) else int(point["x"])
+        return str(point["y"]),int(day)
+    except (AttributeError,IndexError,KeyError,TypeError,ValueError):
+        return None
+
+
+def _cell_detail(base,row_col,row,month,day):
+    d=base[(base[row_col]==row)&(base["_MONTH"]==month)&(base["_DAY"]==day)]
+    if d.empty: return
+    dt=d["_DATE"].iloc[0].strftime("%d/%m/%Y"); total=len(d)
+    st.markdown(f"**{_safe(row)} · {dt}** — {total} matriculas · {d['_AGENT'].nunique()} asesores activos")
+    agent=d.groupby("_AGENT").size().reset_index(name="Matriculas").rename(columns={"_AGENT":"Asesor"})
+    st.dataframe(agent[["Asesor","Matriculas"]],width="stretch",hide_index=True)
+    detail=[c for c in ["Cedula","NOMBRE_COMPLETO","Programa","Nivel Formación","COHORTE","Fecha Contabilización"] if c in d]
+    if detail:
+        with st.expander("Detalle de matriculas"):
+            st.dataframe(d[detail],width="stretch",hide_index=True)
+
+
+def _alerts(base, supervisor, month, is_business_day):
+    d=base[(base["_SUP"]==supervisor)&(base["_MONTH"]==month)].copy()
+    if d.empty: return pd.DataFrame(),pd.DataFrame()
+    cutoff=base.loc[base["_MONTH"]==month,"_DATE"].max().date(); year=cutoff.year; mn=cutoff.month
+    biz=_business_dates(year,mn,cutoff,is_business_day); alerts=[]; critical=[]
+    for agent,da in d[d["_AGENT"]!="Sin asignar"].groupby("_AGENT"):
+        start=da["_DATE"].min().date(); valid=[x for x in biz if x>=start]
+        by=da.groupby(da["_DATE"].dt.date).size(); zeros=[x for x in valid if int(by.get(x,0))==0]
+        prod=int(len(da)); dates_con_matricula=sorted(da["_DATE"].dt.date.unique())
+        for z in zeros:
+            previous=[x for x in dates_con_matricula if x<z]
+            alerts.append({"Agente":agent,"Supervisor":supervisor,"Fecha":z.strftime("%d/%m/%Y"),"Ultima matricula":max(previous).strftime("%d/%m/%Y") if previous else "—","Produccion mes":prod})
+        streak=[]
+        for dt in valid+[None]:
+            if dt in zeros: streak.append(dt)
+            elif streak:
+                if len(streak)>=2:
+                    previous=[x for x in dates_con_matricula if x<streak[0]]
+                    critical.append({"Agente":agent,"Supervisor":supervisor,"Dias consecutivos":len(streak),"Desde":streak[0].strftime("%d/%m/%Y"),"Hasta":streak[-1].strftime("%d/%m/%Y"),"Ultima matricula":max(previous).strftime("%d/%m/%Y") if previous else "—","Produccion mes":prod})
+                streak=[]
+    alert_df=pd.DataFrame(alerts)
+    if len(alert_df):
+        alert_df["_ORDER"]=pd.to_datetime(alert_df["Fecha"],dayfirst=True); alert_df=alert_df.sort_values("_ORDER",ascending=False).drop(columns="_ORDER")
+    critical_df=pd.DataFrame(critical)
+    if len(critical_df):
+        critical_df["_ORDER"]=pd.to_datetime(critical_df["Hasta"],dayfirst=True); critical_df=critical_df.sort_values(["Dias consecutivos","_ORDER"],ascending=[False,False]).drop(columns="_ORDER")
+    return alert_df,critical_df
+
+
+def _pretty_date(value) -> str:
+    if value == "—" or pd.isna(value): return "—"
+    parsed=pd.to_datetime(value,dayfirst=True,errors="coerce")
+    if pd.isna(parsed): return _safe(value)
+    short=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][parsed.month-1]
+    return f"{parsed.day:02d} {short} {parsed.year}"
+
+
+def _incident_cards(frame: pd.DataFrame, critical: bool=False) -> None:
+    if frame.empty:
+        st.success("Sin alertas para la seleccion.")
+        return
+    cards=[]
+    for _,row in frame.iterrows():
+        if critical:
+            headline=f"<strong>{int(row['Dias consecutivos'])} dias consecutivos</strong><span>{_pretty_date(row['Desde'])} → {_pretty_date(row['Hasta'])}</span>"
+            badge=f"{int(row['Dias consecutivos'])} DIAS"
+            tone="critical"; icon="●"
+        else:
+            headline=f"<strong>{_pretty_date(row['Fecha'])}</strong><span>0 matriculas registradas</span>"
+            badge="ALERTA"; tone="warning"; icon="●"
+        cards.append(
+            f"<article class='ebi-incident {tone}'><div class='ebi-inc-dot'>{icon}</div>"
+            f"<div class='ebi-inc-body'><div class='ebi-inc-name'>{_safe(row['Agente'])}</div>"
+            f"<div class='ebi-inc-sup'>{_safe(row['Supervisor'])}</div><div class='ebi-inc-main'>{headline}</div>"
+            f"<div class='ebi-inc-foot'><span>Ultima matricula: <b>{_pretty_date(row['Ultima matricula'])}</b></span>"
+            f"<span>Produccion del mes: <b>{int(row['Produccion mes'])}</b></span></div></div>"
+            f"<div class='ebi-inc-badge'>{badge}</div></article>"
+        )
+    st.markdown("<div class='ebi-inc-scroll'>"+"".join(cards)+"</div>",unsafe_allow_html=True)
+
+
+def _render_matrix_alerts(base, supervisor, month, is_business_day):
+    """Alertas subordinadas a la selección de la matriz diaria por asesor."""
+    alerts, critical = _alerts(base, supervisor, month, is_business_day)
+    a1, a2 = st.columns(2)
+    with a1:
+        _panel_title("🟠", "Alertas", "Dias operativos sin matriculas.", f"{len(alerts)} EVENTOS")
+        _incident_cards(alerts, critical=False)
+    with a2:
+        _panel_title(
+            "🔴", "Alertas criticas",
+            f"Rachas de dos o mas dias habiles sin matricula · {month}.",
+            f"{len(critical)} RACHA(S)",
+        )
+        _incident_cards(critical, critical=True)
+
+
+def _render_matrices(base,is_business_day,global_supervisor):
+    months=_available_months(base)
+    _panel_title("▦","Matriz diaria por Supervisor","Produccion por dia; gris es no laborable y vacio es futuro.","HEATMAP")
+    month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v2_ms_month") if months else None
+    if month:
+        cutoff=base.loc[base["_MONTH"]==month,"_DATE"].max().date()
+        rows=sorted(x for x in base.loc[base["_MONTH"]==month,"_SUP"].unique() if x!="Sin asignar")
+        selected=_heatmap(base,"_SUP",rows,month,is_business_day,"mat_v2_ms_heat",cutoff)
+        if selected: _cell_detail(base,"_SUP",selected[0],month,selected[1])
+    _panel_title("👤","Matriz diaria por Asesor","Se construye solo para un supervisor, protegiendo el rendimiento de la pagina.","SEGUIMIENTO")
+    supervisors=sorted(x for x in base["_SUP"].unique() if x!="Sin asignar")
+    default=supervisors.index(global_supervisor)+1 if global_supervisor in supervisors else 0
+    supervisor=st.selectbox("Supervisor",["Todos"]+supervisors,index=default,key="mat_v2_ma_sup")
+    if supervisor=="Todos":
+        st.info("Selecciona un supervisor para visualizar el comportamiento diario de sus asesores.")
+    else:
+        month_a=st.selectbox("Mes de asesores",months,index=max(len(months)-1,0),key="mat_v2_ma_month")
+        cutoff_a=base.loc[base["_MONTH"]==month_a,"_DATE"].max().date()
+        rows=sorted(x for x in base.loc[(base["_SUP"]==supervisor)&(base["_MONTH"]==month_a),"_AGENT"].unique() if x!="Sin asignar")
+        selected=_heatmap(base[base["_SUP"]==supervisor],"_AGENT",rows,month_a,is_business_day,"mat_v2_ma_heat",cutoff_a)
+        if selected: _cell_detail(base,"_AGENT",selected[0],month_a,selected[1])
+        _render_matrix_alerts(base, supervisor, month_a, is_business_day)
+
+
+def _supervisor_summary(base,metas,month,start,end,is_business_day,meta_agents=None):
+    d=base[base["_MONTH"]==month]; sups=sorted(x for x in d["_SUP"].unique() if x!="Sin asignar")
+    meta=_meta_by_supervisor(metas,sups,[month],start,end,"Meta acumulada al corte",is_business_day,meta_agents).groupby("_SUP")["META"].sum()
+    rows=[]
+    for sup in sups:
+        s=d[d["_SUP"]==sup]; total=len(s); agents=max(s.loc[s["_AGENT"]!="Sin asignar","_AGENT"].nunique(),1); target=float(meta.get(sup,0))
+        daily=s.groupby(s["_DATE"].dt.date).size(); mean=daily.mean() if len(daily) else 0; cv=daily.std()/mean if mean else 9
+        cutoff=s["_DATE"].max().date(); biz=_business_dates(cutoff.year,cutoff.month,cutoff,is_business_day); active=sum(int(daily.get(x,0))>0 for x in biz)
+        programas=s["Programa"].replace("",pd.NA).dropna().nunique()
+        rows.append({"SUP":sup,"Cumplimiento":min(total/target*100,100) if target else 0,"Volumen":total,"Diversidad":programas,"Consistencia":100/(1+cv),"Productividad":total/agents,"Continuidad":active/len(biz)*100 if biz else 0,"Agentes":agents,"Meta":target})
+    out=pd.DataFrame(rows)
+    for c in ["Volumen","Productividad","Diversidad"]:
+        mx=out[c].max() if len(out) else 0; out[c+"_N"]=out[c]/mx*100 if mx else 0
+    return out
+
+
+def _render_analysis(base,metas,start,end,is_business_day,meta_agents=None):
+    months=_available_months(base)
+    if not months:return
+    _panel_title("◉","Perfil Operativo","Seis dimensiones normalizadas para comparar perfiles, no solo volumen.","0–100")
+    c1,c2=st.columns([1,2])
+    with c1: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v2_r_month")
+    summary=_supervisor_summary(base,metas,month,start,end,is_business_day,meta_agents)
+    with c2: selected=st.multiselect("Comparar supervisores (maximo 3)",summary["SUP"].tolist(),default=summary.sort_values("Volumen",ascending=False)["SUP"].head(2).tolist(),max_selections=3,key="mat_v2_r_sup")
+    axes=["Cumplimiento","Volumen","Diversidad","Consistencia","Productividad","Continuidad"]
+    defs={"Cumplimiento":"Matriculas / meta al corte","Volumen":"Matriculas relativo al mejor equipo","Diversidad":"Programas distintos gestionados, relativo al mejor equipo","Consistencia":"100 / (1 + coeficiente de variacion diaria)","Productividad":"Matriculas por asesor, relativo al mejor equipo","Continuidad":"Dias habiles con produccion / dias habiles observados"}
+    fig=go.Figure()
+    for i,sup in enumerate(selected):
+        r=summary[summary["SUP"]==sup].iloc[0]; vals=[r["Cumplimiento"],r["Volumen_N"],r["Diversidad_N"],r["Consistencia"],r["Productividad_N"],r["Continuidad"]]; vals+=vals[:1]; theta=axes+axes[:1]
+        fig.add_scatterpolar(r=vals,theta=theta,fill="toself",name=sup,line=dict(color=PALETTE[i],width=2),fillcolor="rgba(56,189,248,.08)",customdata=[defs[a] for a in theta],hovertemplate="%{theta}: %{r:.1f}<br>%{customdata}<extra>%{fullData.name}</extra>")
+    fig.update_layout(**_layout(440),polar=dict(bgcolor=BG,radialaxis=dict(range=[0,100],gridcolor="rgba(255,255,255,.10)",tickfont=dict(size=9)),angularaxis=dict(gridcolor="rgba(255,255,255,.08)")))
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+    _panel_title("⚡","Productividad por Asesor Activo","Distingue escala de equipo de eficiencia real por persona.","CAPACIDAD")
+    c1,c2,c3=st.columns(3)
+    with c1: pmonth=st.selectbox("Mes",months,index=months.index(month),key="mat_v2_p_month")
+    pdata=_supervisor_summary(base,metas,pmonth,start,end,is_business_day,meta_agents)
+    coords=sorted(x for x in base["_COORD"].unique() if x!="Sin asignar")
+    with c2: pcoords=_multiselect_all("Coordinador",coords,"mat_v2_p_coord")
+    allowed=set(base.loc[base["_COORD"].isin(pcoords),"_SUP"]); pdata=pdata[pdata["SUP"].isin(allowed)]
+    with c3: psups=_multiselect_all("Supervisor",pdata["SUP"].tolist(),"mat_v2_p_sup")
+    pdata=pdata[pdata["SUP"].isin(psups)].sort_values("Productividad")
+    fig=go.Figure(go.Bar(x=pdata["Productividad"],y=pdata["SUP"],orientation="h",marker_color=TEAL,customdata=pdata[["Volumen","Agentes"]],hovertemplate="<b>%{y}</b><br>Productividad: %{x:.1f}<br>Produccion total: %{customdata[0]:,.0f}<br>Asesores activos: %{customdata[1]:,.0f}<extra></extra>")); fig.update_layout(**_layout(max(320,len(pdata)*37)),xaxis={**AXIS,"title":"Matriculas por asesor activo"},yaxis=AXIS)
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _render_projection(base,metas,start,end,is_business_day,meta_agents=None):
+    _panel_title("◎","Proyeccion de Cierre de Mes","Estimacion lineal por ritmo observado en dias habiles.","FORECAST")
+    months=_available_months(base); c1,c2,c3=st.columns(3)
+    with c1: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v2_f_month") if months else None
+    with c2: level=st.selectbox("Nivel",["General","Coordinador","Supervisor"],key="mat_v2_f_level")
+    if not month:return
+    d=base[base["_MONTH"]==month]
+    options=["General"] if level=="General" else sorted(x for x in d["_COORD" if level=="Coordinador" else "_SUP"].unique() if x!="Sin asignar")
+    with c3: entity=st.selectbox(level,options,key="mat_v2_f_entity")
+    if level!="General": d=d[d["_COORD" if level=="Coordinador" else "_SUP"]==entity]
+    if d.empty:st.info("Sin datos para proyectar.");return
+    cutoff=d["_DATE"].max().date(); mn=cutoff.month; year=cutoff.year; elapsed=len(_business_dates(year,mn,cutoff,is_business_day)); month_end=date(year,mn,calendar.monthrange(year,mn)[1]); total_days=len(_business_dates(year,mn,month_end,is_business_day))
+    actual=int(len(d))
+    projection=actual/elapsed*total_days if elapsed else 0
+    sups=sorted(d["_SUP"].unique()); target=float(_meta_by_supervisor(metas,sups,[month],date(year,mn,1),month_end,"Meta mensual",is_business_day,meta_agents).META.sum())
+    gap=projection-target; xmax=max(target,projection,actual,1)*1.12
+    st.markdown(f"<div class='ebi-forecast'><span>META<b>{target:,.0f}</b></span><span>ACTUAL<b>{actual:,.0f}</b></span><span>PROYECCION<b>{projection:,.0f}</b></span><span>BRECHA PROYECTADA<b style='color:{GREEN if gap>=0 else RED}'>{gap:+,.0f}</b></span></div>",unsafe_allow_html=True)
+    fig=go.Figure(); fig.add_bar(y=[entity],x=[actual],orientation="h",marker_color=GREEN,width=.28,name="Actual",hovertemplate="Actual: %{x:,.0f}<extra></extra>"); fig.add_scatter(x=[projection],y=[entity],mode="markers",marker=dict(symbol="diamond",size=14,color=BLUE),name="Proyeccion",hovertemplate="Proyeccion: %{x:,.0f}<extra></extra>"); fig.add_scatter(x=[target],y=[entity],mode="markers",marker=dict(symbol="line-ns-open",size=28,color="white",line=dict(width=3)),name="Meta",hovertemplate="Meta: %{x:,.0f}<extra></extra>"); fig.add_shape(type="line",x0=actual,x1=projection,y0=0,y1=0,line=dict(color=BLUE,width=3,dash="dot")); fig.update_layout(**_layout(230),xaxis={**AXIS,"range":[0,xmax]},yaxis=AXIS)
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _metric_daily_history(frame, cutoff, is_business_day):
+    if frame.empty:
+        return pd.Series(dtype=float)
+    d = frame[frame["_DATE"].dt.date <= cutoff]
+    if d.empty:
+        return pd.Series(dtype=float)
+    grouped = d.groupby(d["_DATE"].dt.normalize()).size()
+    first = max(d["_DATE"].min().date(), cutoff - timedelta(days=120))
+    calendar_days = [dt for dt in pd.date_range(first, cutoff, freq="D") if is_business_day(dt.date())]
+    return grouped.reindex(calendar_days, fill_value=0).astype(float)
+
+
+def _probabilistic_forecast(history, actual, target, cutoff, month_end, is_business_day, seed=42):
+    remaining = [
+        dt for dt in pd.date_range(cutoff + timedelta(days=1), month_end, freq="D")
+        if is_business_day(dt.date())
+    ]
+    recent = history.tail(60)
+    if recent.empty or not remaining:
+        outcomes = np.full(2000, float(actual))
+    else:
+        baseline = float(recent.tail(30).mean())
+        momentum = float(recent.tail(10).mean()) / baseline if baseline > 0 else 1.0
+        momentum = float(np.clip(momentum, .70, 1.30))
+        rng = np.random.default_rng(seed)
+        future = np.zeros(2000)
+        for dt in remaining:
+            same_weekday = recent[recent.index.weekday == dt.weekday()]
+            pool = same_weekday if len(same_weekday) >= 2 else recent
+            future += rng.choice(pool.to_numpy(), size=len(future), replace=True) * momentum
+        outcomes = actual + future
+    p10, p50, p90 = np.percentile(outcomes, [10, 50, 90])
+    probability = float(np.mean(outcomes >= target) * 100) if target > 0 else np.nan
+    expected_daily = float(np.mean(outcomes - actual) / len(remaining)) if remaining else 0.0
+    required_daily = max(target - actual, 0) / len(remaining) if remaining else 0.0
+    if target <= 0:
+        goal_date = "Sin meta"
+    elif actual >= target:
+        goal_date = _pretty_date(cutoff)
+    elif expected_daily <= 0:
+        goal_date = "Fuera del mes"
+    else:
+        days_needed = int(np.ceil((target - actual) / expected_daily))
+        goal_date = _pretty_date(remaining[days_needed - 1]) if 0 < days_needed <= len(remaining) else "Fuera del mes"
+    return {
+        "p10": float(p10), "p50": float(p50), "p90": float(p90),
+        "probability": probability, "required_daily": float(required_daily),
+        "expected_daily": expected_daily, "goal_date": goal_date,
+        "remaining_days": len(remaining),
+    }
+
+
+def _forecast_actual(frame):
+    return int(len(frame))
+
+
+def _forecast_risk_data(scope, metas, month, cutoff, month_end, is_business_day, meta_agents):
+    month_scope = scope[scope["_MONTH"] == month]
+    supervisors = sorted(x for x in month_scope["_SUP"].unique() if x != "Sin asignar")
+    targets = _meta_by_supervisor(
+        metas, supervisors, [month], date(cutoff.year, cutoff.month, 1), month_end,
+        "Meta mensual", is_business_day, meta_agents,
+    ).groupby("_SUP")["META"].sum()
+    rows = []
+    for pos, supervisor in enumerate(supervisors):
+        sup_scope = scope[scope["_SUP"] == supervisor]
+        actual = _forecast_actual(month_scope[month_scope["_SUP"] == supervisor])
+        target = float(targets.get(supervisor, 0))
+        history = _metric_daily_history(sup_scope, cutoff, is_business_day)
+        stats = _probabilistic_forecast(history, actual, target, cutoff, month_end, is_business_day, 100 + pos)
+        probability = stats["probability"]
+        risk = "Sin meta" if pd.isna(probability) else ("Bajo" if probability >= 75 else "Medio" if probability >= 40 else "Alto")
+        rows.append({"Supervisor": supervisor, "Actual": actual, "Meta": target, "P50": stats["p50"], "Probabilidad": probability, "Riesgo": risk})
+    return pd.DataFrame(rows)
+
+
+def _render_predictive(base,metas,start,end,is_business_day,meta_agents=None):
+    _panel_title("◎","Proyeccion probabilistica de cierre","Simulacion por ritmo reciente y patron de dias habiles.","PREDICTIVO")
+    months=_available_months(base); c1,c2,c3=st.columns(3)
+    with c1: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v4_pf_month") if months else None
+    with c2: level=st.selectbox("Nivel",["General","Coordinador","Supervisor"],key="mat_v4_pf_level")
+    if not month:return
+    month_base=base[base["_MONTH"]==month]
+    options=["General"] if level=="General" else sorted(x for x in month_base["_COORD" if level=="Coordinador" else "_SUP"].unique() if x!="Sin asignar")
+    with c3: entity=st.selectbox(level,options,key="mat_v4_pf_entity")
+    scope=base
+    if level!="General": scope=scope[scope["_COORD" if level=="Coordinador" else "_SUP"]==entity]
+    d=scope[scope["_MONTH"]==month]
+    if d.empty:st.info("Sin datos para proyectar.");return
+    cutoff=month_base["_DATE"].max().date(); mn=cutoff.month; year=cutoff.year; month_end=date(year,mn,calendar.monthrange(year,mn)[1])
+    actual=_forecast_actual(d)
+    sups=sorted(d["_SUP"].unique()); target=float(_meta_by_supervisor(metas,sups,[month],date(year,mn,1),month_end,"Meta mensual",is_business_day,meta_agents).META.sum())
+    history=_metric_daily_history(scope,cutoff,is_business_day)
+    stats=_probabilistic_forecast(history,actual,target,cutoff,month_end,is_business_day)
+    projection=stats["p50"]; gap=projection-target; probability=stats["probability"]
+    probability_text="—" if pd.isna(probability) else _percent_es(probability)
+    interval=f"{_number_es(stats['p10'])} – {_number_es(stats['p90'])}"
+    st.markdown(
+        f"<div class='ebi-forecast ebi-forecast-predictive'>"
+        f"<span>META<b>{_number_es(target)}</b><small>{stats['remaining_days']} dias habiles restantes</small></span>"
+        f"<span>ACTUAL<b>{_number_es(actual)}</b><small>Corte: {_pretty_date(cutoff)}</small></span>"
+        f"<span>PROYECCION P50<b>{_number_es(projection)}</b><small>Escenario central</small></span>"
+        f"<span>RANGO PROBABLE 80 %<b>{interval}</b><small>Percentiles P10–P90</small></span>"
+        f"<span>PROBABILIDAD DE META<b style='color:{GREEN if not pd.isna(probability) and probability>=75 else AMBER if not pd.isna(probability) and probability>=40 else RED}'>{probability_text}</b><small>2.000 escenarios</small></span>"
+        f"<span>RITMO REQUERIDO<b>{stats['required_daily']:.1f}/dia</b><small>Fecha estimada: {stats['goal_date']}</small></span></div>",
+        unsafe_allow_html=True,
+    )
+    xmax=max(target,stats["p90"],actual,1)*1.12
+    fig=go.Figure()
+    fig.add_scatter(x=[stats["p10"],stats["p90"]],y=[entity,entity],mode="lines",line=dict(color="rgba(56,189,248,.26)",width=18),name="Rango probable 80 %",hovertemplate="Rango P10–P90: %{x:,.0f}<extra></extra>")
+    fig.add_bar(y=[entity],x=[actual],orientation="h",marker_color=GREEN,width=.25,name="Actual",hovertemplate="Actual: %{x:,.0f}<extra></extra>")
+    fig.add_scatter(x=[projection],y=[entity],mode="markers",marker=dict(symbol="diamond",size=15,color=BLUE),name="Proyeccion P50",hovertemplate="Proyeccion mediana: %{x:,.0f}<extra></extra>")
+    fig.add_scatter(x=[target],y=[entity],mode="markers",marker=dict(symbol="line-ns-open",size=29,color="white",line=dict(width=3)),name="Meta",hovertemplate="Meta: %{x:,.0f}<extra></extra>")
+    fig.add_shape(type="line",x0=actual,x1=projection,y0=0,y1=0,line=dict(color=BLUE,width=3,dash="dot"))
+    fig.update_layout(**_layout(240),xaxis={**AXIS,"range":[0,xmax]},yaxis=AXIS)
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+    risk=_forecast_risk_data(scope,metas,month,cutoff,month_end,is_business_day,meta_agents)
+    if not risk.empty:
+        _panel_title("⚠", "Riesgo predictivo por Supervisor", "Probabilidad estimada de alcanzar la meta mensual.", "PRIORIZACION")
+        risk=risk.sort_values(["Probabilidad","P50"],ascending=[False,False],na_position="first")
+        colors={"Alto":RED,"Medio":AMBER,"Bajo":GREEN,"Sin meta":MUTED}
+        fig=go.Figure(go.Bar(
+            x=risk["Probabilidad"].fillna(0),y=risk["Supervisor"],orientation="h",
+            marker_color=[colors[x] for x in risk["Riesgo"]],
+            text=["Sin meta" if pd.isna(p) else f"{p:.0f}%" for p in risk["Probabilidad"]],textposition="outside",cliponaxis=False,
+            customdata=risk[["Actual","Meta","P50","Riesgo"]],
+            hovertemplate="<b>%{y}</b><br>Probabilidad de meta: %{x:.1f}%<br>Actual: %{customdata[0]:,.0f}<br>Meta: %{customdata[1]:,.0f}<br>Proyeccion P50: %{customdata[2]:,.0f}<br>Riesgo: %{customdata[3]}<extra></extra>",
+        ))
+        fig.add_vrect(x0=0,x1=40,fillcolor="rgba(244,63,94,.035)",line_width=0,layer="below")
+        fig.add_vrect(x0=40,x1=75,fillcolor="rgba(245,158,11,.035)",line_width=0,layer="below")
+        fig.add_vrect(x0=75,x1=100,fillcolor="rgba(16,185,129,.035)",line_width=0,layer="below")
+        fig.update_layout(**_layout(max(300,len(risk)*35+90)),xaxis={**AXIS,"range":[0,108],"title":"Probabilidad de cumplir (%)"},yaxis=AXIS,showlegend=False)
+        st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _number_es(value: float) -> str:
+    return f"{value:,.0f}".replace(",", ".")
+
+
+def _percent_es(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " %"
+
+
+def _render_overview_kpis(base, metas, start, end, is_business_day, meta_agents=None):
+    """Resumen ejecutivo del mismo universo delimitado por los filtros globales."""
+    total = int(len(base))
+    supervisors = sorted(x for x in base["_SUP"].unique() if x != "Sin asignar")
+    months = _available_months(base)
+    cutoff = min(end, date.today())
+    meta = _meta_by_supervisor(
+        metas, supervisors, months, start, cutoff,
+        "Meta acumulada al corte", is_business_day, meta_agents,
+    )
+    target = float(meta["META"].sum()) if "META" in meta else 0.0
+    compliance = total / target * 100 if target > 0 else np.nan
+    gap = total - target
+    dias_rango = _dias_habiles_rango(start, end)
+    ticket = total / dias_rango if dias_rango else 0.0
+    asesores_activos = base.loc[base["_AGENT"] != "Sin asignar", "_AGENT"].nunique()
+
+    if pd.isna(compliance):
+        compliance_value, compliance_detail, compliance_color = "—", "Sin meta disponible", MUTED
+        progress = 0.0
+    elif compliance >= 100:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "Meta alcanzada", GREEN
+        progress = 100.0
+    elif compliance >= 90:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "En rango de cumplimiento", AMBER
+        progress = compliance
+    else:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "Bajo la meta", RED
+        progress = compliance
+
+    if target <= 0:
+        gap_value, gap_detail, gap_color = "—", "Sin meta para comparar", MUTED
+    elif gap > 0:
+        gap_value, gap_detail, gap_color = f"+{_number_es(gap)}", f"Superavit de {_number_es(gap)}", GREEN
+    elif gap < 0:
+        gap_value, gap_detail, gap_color = f"−{_number_es(abs(gap))}", f"Faltan {_number_es(abs(gap))}", RED
+    else:
+        gap_value, gap_detail, gap_color = "0", "Meta alcanzada", GREEN
+
+    cards = [
+        ("◎", "Total matriculas", _number_es(total), "Registros del periodo", BLUE, ""),
+        ("◇", "Meta al corte", _number_es(target), f"Corte: {_pretty_date(cutoff)}", INDIGO, ""),
+        ("↗", "Cumplimiento", compliance_value, compliance_detail, compliance_color,
+         f"<div class='ebi-overview-track'><i style='width:{min(max(progress, 0), 100):.1f}%'></i></div>"),
+        ("±", "Brecha vs meta", gap_value, gap_detail, gap_color, ""),
+        ("📆", "Ticket promedio dia", f"{ticket:.1f}".replace(".", ","), f"{dias_rango} dias habiles en el rango", TEAL, ""),
+        ("👤", "Asesores activos", _number_es(asesores_activos), "Con al menos una matricula", GREEN, ""),
+    ]
+    html_cards = "".join(
+        f"<article class='ebi-overview-card' style='--accent:{color}'>"
+        f"<div class='ebi-overview-head'><span>{icon}</span><b>{label}</b></div>"
+        f"<strong>{value}</strong><small>{detail}</small>{extra}</article>"
+        for icon, label, value, detail, color, extra in cards
+    )
+    st.markdown(f"<div class='ebi-overview'>{html_cards}</div>", unsafe_allow_html=True)
+
+
+def _css():
+    st.markdown("""
+    <style>
+    .ebi-top{position:relative;overflow:hidden;margin:0 0 10px;padding:19px 22px;border:1px solid rgba(56,189,248,.16);border-radius:16px;background:linear-gradient(110deg,rgba(56,189,248,.075),rgba(16,185,129,.035) 55%,rgba(129,140,248,.045));display:flex;align-items:center;justify-content:space-between;gap:24px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
+    .ebi-top::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#38BDF8,#34D399)}.ebi-top::after{content:'';position:absolute;width:260px;height:160px;right:-90px;top:-105px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.11),transparent 70%);pointer-events:none}.ebi-top-copy{position:relative;z-index:1;min-width:0}.ebi-top-context{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:8px;font-weight:850;letter-spacing:.18em;color:#7DD3FC}.ebi-top-context i{display:block;width:18px;height:1px;background:#38BDF8}.ebi-top h1{font-family:'Space Grotesk',sans-serif!important;font-size:26px!important;line-height:1.08!important;color:white;margin:0!important}.ebi-top p{font-size:10px;color:rgba(255,255,255,.43);margin:6px 0 0}.ebi-period{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto;padding-left:22px;border-left:1px solid rgba(255,255,255,.09)}.ebi-period span{font-size:7px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.35)}.ebi-period b{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.04em;color:#7DD3FC;white-space:nowrap}
+    div.st-key-mat_module_nav{margin:0 0 8px;padding:5px;border:1px solid rgba(255,255,255,.085);border-radius:13px;background:rgba(2,17,13,.55);box-shadow:0 8px 30px -26px rgba(0,0,0,.9)}div.st-key-mat_module_nav div[data-testid='stHorizontalBlock']{gap:5px}div.st-key-mat_module_nav button{min-height:39px!important;border:1px solid transparent!important;border-radius:9px!important;background:transparent!important;color:rgba(255,255,255,.62)!important;box-shadow:none!important;font-size:11px!important;font-weight:650!important;transition:background .16s,color .16s,border-color .16s!important}div.st-key-mat_module_nav button:hover{color:white!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.075)!important}div.st-key-mat_module_nav button[kind='primary']{color:#7DD3FC!important;background:linear-gradient(135deg,rgba(56,189,248,.14),rgba(16,185,129,.08))!important;border-color:rgba(56,189,248,.22)!important;box-shadow:inset 0 -2px 0 #38BDF8!important}
+    .ebi-overview{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:14px 0 6px}.ebi-overview-card{position:relative;overflow:hidden;min-width:0;padding:13px 13px 12px;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,rgba(255,255,255,.035)),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}.ebi-overview-card::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent)}.ebi-overview-head{display:flex;align-items:center;gap:7px;min-width:0}.ebi-overview-head span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 22px;border-radius:7px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:11px;font-weight:900}.ebi-overview-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.56);font-size:8px;letter-spacing:.075em;text-transform:uppercase}.ebi-overview-card>strong{display:block;margin:10px 0 2px;font-family:'Space Grotesk',sans-serif;font-size:22px;line-height:1;color:#fff}.ebi-overview-card>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.40);font-size:8px}.ebi-overview-track{height:3px;margin-top:9px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.ebi-overview-track i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+    .ebi-section{display:flex;align-items:center;gap:10px;margin:22px 0 9px}.ebi-section span{font-size:9px;font-weight:800;letter-spacing:.16em;color:#38BDF8}.ebi-section b{font-family:'Space Grotesk',sans-serif;font-size:15px;color:white}.ebi-section i{height:1px;flex:1;background:linear-gradient(90deg,rgba(255,255,255,.14),transparent)}
+    .ebi-head{display:flex;align-items:center;gap:11px;margin:10px 0 5px;padding:10px 12px;border-left:2px solid #38BDF8;background:linear-gradient(90deg,rgba(56,189,248,.07),transparent);border-radius:0 12px 12px 0}.ebi-icon{width:31px;height:31px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:rgba(255,255,255,.07)}.ebi-copy{flex:1}.ebi-title{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:#fff}.ebi-sub{font-size:10px;color:rgba(255,255,255,.43);margin-top:2px}.ebi-tag{font-size:8px;font-weight:800;letter-spacing:.10em;color:#7DD3FC;border:1px solid rgba(56,189,248,.24);border-radius:99px;padding:4px 8px}
+    .ebi-kpis,.ebi-forecast{display:flex;gap:10px;margin:8px 0}.ebi-kpis span,.ebi-forecast span{flex:1;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;font-size:9px;letter-spacing:.08em;color:rgba(255,255,255,.45)}.ebi-kpis b,.ebi-forecast b{font-family:'Space Grotesk',sans-serif;font-size:17px;margin-right:7px;color:white}.ebi-forecast span{display:flex;flex-direction:column;gap:4px}.ebi-forecast b{font-size:22px;margin:0}.ebi-forecast small{font-size:8px;letter-spacing:0;color:rgba(255,255,255,.35)}.ebi-forecast-predictive{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}.ebi-forecast-predictive span{min-width:0}.ebi-forecast-predictive b{font-size:18px;white-space:nowrap}
+    .ebi-selected{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 7px}.ebi-selected span{font-size:9px;color:rgba(255,255,255,.58);padding:3px 7px;border:1px solid rgba(255,255,255,.08);border-radius:99px;background:rgba(255,255,255,.025)}.ebi-selected span::first-letter{color:var(--dot)}
+    .ebi-inc-scroll{max-height:560px;overflow-y:auto;padding:2px 6px 2px 1px;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.35) transparent}.ebi-incident{position:relative;display:flex;gap:10px;margin:0 0 9px;padding:13px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--incident);box-shadow:0 8px 22px -18px rgba(0,0,0,.9)}.ebi-incident.warning{--incident:#F59E0B}.ebi-incident.critical{--incident:#F43F5E}.ebi-inc-dot{color:var(--incident);font-size:10px;padding-top:3px}.ebi-inc-body{min-width:0;flex:1}.ebi-inc-name{font-size:12px;font-weight:750;color:rgba(255,255,255,.94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ebi-inc-sup{font-size:9px;color:rgba(255,255,255,.40);margin:2px 0 9px}.ebi-inc-main{display:flex;flex-direction:column;gap:2px}.ebi-inc-main strong{font-family:'Space Grotesk',sans-serif;font-size:13px;color:white}.ebi-inc-main span{font-size:9px;color:rgba(255,255,255,.52)}.ebi-inc-foot{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);font-size:8px;color:rgba(255,255,255,.38)}.ebi-inc-foot b{color:rgba(255,255,255,.70)}.ebi-inc-badge{align-self:flex-start;font-size:7px;font-weight:850;letter-spacing:.08em;color:var(--incident);background:color-mix(in srgb,var(--incident) 10%,transparent);border:1px solid color-mix(in srgb,var(--incident) 28%,transparent);border-radius:99px;padding:3px 6px;white-space:nowrap}
+    @media(max-width:1100px){.ebi-overview,.ebi-forecast-predictive{grid-template-columns:repeat(3,minmax(0,1fr))}.ebi-inc-scroll{max-height:500px}.ebi-forecast:not(.ebi-forecast-predictive){flex-wrap:wrap}.ebi-forecast:not(.ebi-forecast-predictive) span{min-width:42%}}
+    @media(max-width:720px){.ebi-top{align-items:flex-start;flex-direction:column;gap:13px}.ebi-period{align-items:flex-start;padding:0;border-left:0}.ebi-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    div[data-testid='stVerticalBlockBorderWrapper']{border-color:rgba(255,255,255,.08)!important;background:rgba(255,255,255,.018)!important;border-radius:16px!important}
+    </style>
+    """,unsafe_allow_html=True)
+
+
+def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos"):
+    _css(); d=_prepare(base)
+    st.markdown(
+        f"<div class='ebi-top'><div class='ebi-top-copy'>"
+        f"<div class='ebi-top-context'><i></i>MATRICULAS</div>"
+        f"<h1>Centro de Operaciones</h1>"
+        f"<p>Produccion, capacidad, riesgo y cierre proyectado</p></div>"
+        f"<div class='ebi-period'><span>PERIODO ANALIZADO</span>"
+        f"<b>{_pretty_date(fecha_ini)} — {_pretty_date(fecha_fin)}</b></div></div>",
+        unsafe_allow_html=True,
+    )
+    root=Path(__file__).resolve().parent.parent
+    home_pg=st.Page(str(root/"home.py"),title="Inicio",icon="🏠",default=True)
+    insc_pg=st.Page(str(root/"pages/1_Inscripciones.py"),title="Inscripciones",icon="📝")
+    quart_pg=st.Page(str(root/"pages/3_Cuartiles.py"),title="Cuartiles",icon="🏆")
+    rt_pg=st.Page(str(root/"pages/4_Contactabilidad.py"),title="Real time",icon="📞")
+    with st.container(key="mat_module_nav"):
+        n1,n2,n3,n4,n5=st.columns(5)
+        with n1:
+            if st.button("⌂  Inicio",key="mat_v2_nav_home",width="stretch"): st.switch_page(home_pg)
+        with n2:
+            if st.button("▤  Inscripciones",key="mat_v2_nav_ins",width="stretch"): st.switch_page(insc_pg)
+        with n3: st.button("◆  Matriculas",key="mat_v2_nav_mat",width="stretch",type="primary")
+        with n4:
+            if st.button("◇  Cuartiles",key="mat_v2_nav_q",width="stretch"): st.switch_page(quart_pg)
+        with n5:
+            if st.button("●  Real time",key="mat_v2_nav_rt",width="stretch"): st.switch_page(rt_pg)
+    if d.empty:
+        st.warning("No hay matriculas dentro de los filtros globales seleccionados."); return
+    meta_agents=[global_agent] if global_agent!="Todos" else None
+    _render_overview_kpis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    _section("A", "MONITOREO")
+    with st.container(border=True): _render_supervisor(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    with st.container(border=True): _render_coordinator(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    _section("B", "PRODUCCION")
+    with st.container(border=True): _render_weekday(d,is_business_day)
+    with st.container(border=True): _render_trend(d)
+    _section("C", "CONTROL")
+    with st.container(border=True):
+        _panel_title("📋","Matriculas por Supervisor","Tabla operativa conservada sin cambios de estructura ni calculo.",f"{len(tabla)} SUPERVISORES")
+        render_table(tabla,total_general)
+    with st.container(border=True): _render_gap(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    _section("D", "SEGUIMIENTO OPERATIVO")
+    with st.container(border=True): _render_matrices(d,is_business_day,global_supervisor)
+    _section("E", "ANALISIS")
+    with st.container(border=True): _render_analysis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    with st.container(border=True): _render_projection(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    with st.container(border=True): _render_predictive(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
 
 
 # ─────────────────────────────────────────────
@@ -669,133 +1354,8 @@ st.markdown(f"""
     div[data-testid="stSidebarContent"] {{ width:100%!important; box-sizing:border-box!important; padding-right:0.75rem!important; }}
     div[data-testid="stSidebarContent"] > div {{ width:100%!important; }}
 
-    /* ── Header banner ── */
-    .st-key-hdrbanner {{
-        position: relative; overflow: hidden;
-        background:
-            radial-gradient(ellipse 70% 130% at 2% -15%,  rgba(14,165,233,0.34) 0%, transparent 60%),
-            radial-gradient(ellipse 65% 130% at 100% 120%, rgba(129,140,248,0.34) 0%, transparent 60%),
-            radial-gradient(ellipse 55% 110% at 72% 130%,  rgba(52,211,153,0.16) 0%, transparent 60%),
-            linear-gradient(155deg, #071811 0%, #0C2B1D 50%, #061109 100%);
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 20px; padding: 18px 30px; margin-bottom: 18px;
-        box-shadow: 0 18px 46px -18px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
-    }}
-    .hb-eyebrow {{ display:inline-flex;align-items:center;gap:8px;
-        background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);
-        border-radius:99px;padding:5px 13px;margin-bottom:11px;
-        font-size:10px;font-weight:700;color:rgba(255,255,255,0.78);
-        letter-spacing:0.12em;text-transform:uppercase; }}
-    .hb-dot {{ width:7px;height:7px;border-radius:50%;background:#34D399;
-        box-shadow:0 0 9px #34D399;animation:sbcPulse 1.8s ease-in-out infinite; }}
-    .hb-title {{ font-family:'Space Grotesk',sans-serif!important;
-        font-size:29px;font-weight:700;color:white;margin:0 0 9px;
-        letter-spacing:-0.8px;line-height:1.05; }}
-    .hb-meta {{ display:flex;flex-wrap:wrap;gap:8px;margin:0 0 2px; }}
-    .hb-chip {{ display:inline-flex;align-items:center;gap:6px;
-        background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.13);
-        border-radius:9px;padding:5px 11px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.74); }}
-    .hb-chip b {{ color:#fff;font-weight:700; }}
-    .nav-lbl {{ font-size:9px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;
-        color:rgba(255,255,255,0.40);margin:3px 0 7px; }}
-    .st-key-hdrbanner [data-testid="stVerticalBlock"] {{ gap: 0.5rem !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button {{
-        position:relative; z-index:2; overflow:hidden; white-space:nowrap !important;
-        color:#CBD3F2 !important; border-radius:9px !important;
-        font-size:10px !important; font-weight:700 !important;
-        height:32px !important; min-height:32px !important; padding:0 11px !important;
-        border:1px solid rgba(255,255,255,0.12) !important; border-top-color:rgba(255,255,255,0.18) !important;
-        background:linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.025)) !important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -2px 6px -2px rgba(0,0,0,0.35), 0 4px 12px -8px rgba(8,3,24,0.60) !important;
-        transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, color .16s ease !important;
-    }}
-    .st-key-hdrbanner [data-testid="stButton"] > button p {{ white-space:nowrap !important; margin:0 !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button:hover {{
-        color:#EAF2FF !important; transform:translateY(-1px) !important;
-        border-color:rgba(125,211,252,0.42) !important;
-        background:linear-gradient(180deg, rgba(125,211,252,0.15), rgba(255,255,255,0.04)) !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"] {{
-        color:#F4F9FF !important; padding-left:20px !important;
-        border:1px solid rgba(56,189,248,0.55) !important; border-top-color:rgba(186,225,255,0.62) !important;
-        background:linear-gradient(180deg, rgba(56,189,248,0.30), rgba(59,130,246,0.16)) !important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 22px -10px rgba(56,189,248,0.50) !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"]::before {{
-        content:""; position:absolute; left:8px; top:50%; transform:translateY(-50%);
-        width:5px; height:5px; border-radius:50%; background:#7DD3FC; box-shadow:0 0 8px rgba(125,211,252,0.9); }}
-
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
     @keyframes sbcBar {{ 0% {{ background-position:0% 0%; }} 100% {{ background-position:200% 0%; }} }}
-
-    /* ── KPI cards ── */
-    .kpi-card {{
-        background: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);
-        border-radius: 20px; padding: 22px 22px 18px;
-        box-shadow: 0 20px 44px -18px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
-        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-        position: relative; overflow: hidden; min-height: 148px;
-        display: flex; flex-direction: column; justify-content: space-between;
-        border: 1px solid rgba(255,255,255,0.10);
-        transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
-    }}
-    .kpi-card:hover {{
-        transform: translateY(-6px); border-color: var(--kc, {COLOR_ACCENT});
-        box-shadow: 0 30px 60px -22px rgba(0,0,0,0.8), 0 0 36px -12px var(--kc, {COLOR_ACCENT}), inset 0 1px 0 rgba(255,255,255,0.10);
-    }}
-    .kpi-card::before {{ content:'';position:absolute;top:0;left:0;right:0;height:4px;
-        background:var(--kc, {COLOR_PRIMARY});box-shadow:0 0 18px -2px var(--kc, {COLOR_PRIMARY}); }}
-    .kpi-card::after {{ content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;
-        background:radial-gradient(circle,var(--kc, {COLOR_PRIMARY}),transparent 70%);opacity:0.22;border-radius:50%; }}
-    .kpi-bg-icon {{ position:absolute;bottom:12px;right:16px;font-size:46px;opacity:0.10;line-height:1;pointer-events:none;z-index:0; }}
-    .kpi-label {{ font-size:10px;color:rgba(255,255,255,0.50);font-weight:700;text-transform:uppercase;letter-spacing:0.10em;position:relative;z-index:1; }}
-    .kpi-value {{ font-family:'Space Grotesk',sans-serif!important;font-size:30px;font-weight:700;line-height:1.1;margin:10px 0 4px;position:relative;z-index:1;letter-spacing:-0.5px;text-shadow:0 2px 16px rgba(0,0,0,0.4); }}
-    .kpi-sub {{ font-size:11px;color:rgba(255,255,255,0.42);position:relative;z-index:1; }}
-    .kpi-bar-wrap {{ background:rgba(255,255,255,0.09);border-radius:99px;height:5px;margin-top:12px;overflow:hidden;position:relative;z-index:1; }}
-    .kpi-bar-fill {{ height:5px;border-radius:99px;box-shadow:0 0 10px -1px currentColor; }}
-
-    /* ── Section header ── */
-    .sec-header {{
-        background:
-            radial-gradient(ellipse at 12% 35%, rgba(255,255,255,0.18) 0%, transparent 55%),
-            radial-gradient(ellipse at 92% 135%, rgba(0,0,0,0.24) 0%, transparent 55%),
-            var(--sc, {COLOR_PRIMARY});
-        border-radius: 20px; padding: 22px 28px; margin: 34px 0 18px;
-        box-shadow: 0 18px 42px -12px rgba(15,23,42,0.45);
-        position: relative; overflow: hidden;
-        display: flex; align-items: center; gap: 18px;
-        border: 1px solid rgba(255,255,255,0.14);
-    }}
-    .sec-header::before {{ content:'';position:absolute;left:-25px;top:-35px;width:130px;height:130px;background:rgba(255,255,255,0.10);border-radius:50%; }}
-    .sec-header::after {{ content:'';position:absolute;right:-35px;bottom:-45px;width:150px;height:150px;background:rgba(255,255,255,0.07);border-radius:50%; }}
-    .sec-icon {{ width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:27px;flex-shrink:0;position:relative;z-index:1;
-        background:rgba(255,255,255,0.18) !important;border:1px solid rgba(255,255,255,0.28) !important;box-shadow:0 8px 18px -6px rgba(0,0,0,0.4); }}
-    .sec-text {{ flex:1;min-width:0;position:relative;z-index:1; }}
-    .sec-title {{ font-size:19px;font-weight:800;color:white;margin:0 0 5px 0;letter-spacing:-0.4px; }}
-    .sec-desc {{ font-size:12px;color:rgba(255,255,255,0.78);margin:0;line-height:1.6; }}
-    .sec-meta {{ text-align:center;flex-shrink:0;padding:9px 20px;background:rgba(255,255,255,0.96);border-radius:13px;border:1px solid rgba(255,255,255,0.5);box-shadow:0 6px 16px -6px rgba(0,0,0,0.3);position:relative;z-index:1; }}
-    .sec-meta-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:24px;font-weight:700;line-height:1.1;margin-bottom:2px;letter-spacing:-0.5px; }}
-    .sec-meta-lab {{ font-size:9px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.08em; }}
-    .sec-tag {{ font-size:10px;font-weight:700;color:white;background:rgba(255,255,255,0.20);border:1px solid rgba(255,255,255,0.35);padding:5px 14px;border-radius:99px;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;align-self:flex-start;position:relative;z-index:1; }}
-
-    /* ── Chart mini-headers ── */
-    .chart-hdr {{ display:flex;align-items:center;gap:12px;padding:12px 16px;
-        background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
-        border-radius:14px;border:1px solid rgba(255,255,255,0.10);border-left:4px solid var(--cc, {COLOR_ACCENT});
-        box-shadow:0 8px 22px -10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);margin-bottom:12px; }}
-    .ch-icon {{ font-size:18px;line-height:1;flex-shrink:0;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12); }}
-    .ch-texts {{ flex:1;min-width:0; }}
-    .ch-title {{ font-size:13px;font-weight:800;color:#F1F4FF;margin:0 0 1px;letter-spacing:-0.2px; }}
-    .ch-sub {{ font-size:10.5px;color:rgba(255,255,255,0.45);margin:0; }}
-    .ch-tag {{ margin-left:auto;font-size:9px;font-weight:700;color:var(--cc, {COLOR_ACCENT});background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);padding:3px 9px;border-radius:99px;letter-spacing:0.05em;flex-shrink:0;text-transform:uppercase; }}
-
-    /* ── Table headers ── */
-    .tbl-hdr {{ padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:12px;margin-bottom:6px;box-shadow:0 4px 18px rgba(0,0,0,0.15);position:relative;overflow:hidden; }}
-    .tbl-hdr::before {{ content:'';position:absolute;left:-10px;top:-10px;width:60px;height:60px;background:rgba(255,255,255,0.08);border-radius:50%; }}
-    .tbl-hdr::after {{ content:'';position:absolute;right:-20px;bottom:-20px;width:80px;height:80px;background:rgba(255,255,255,0.10);border-radius:50%; }}
-    .tbl-hdr-icon {{ font-size:24px;flex-shrink:0;position:relative;z-index:1; }}
-    .tbl-hdr-body {{ flex:1;position:relative;z-index:1; }}
-    .tbl-hdr-title {{ font-size:14px;font-weight:800;color:white;margin:0 0 2px;letter-spacing:-0.2px; }}
-    .tbl-hdr-desc {{ font-size:11px;color:rgba(255,255,255,0.72);margin:0; }}
-    .tbl-hdr-badge {{ font-size:10px;font-weight:700;color:white;background:rgba(255,255,255,0.20);border:1px solid rgba(255,255,255,0.35);padding:4px 12px;border-radius:99px;flex-shrink:0;white-space:nowrap;position:relative;z-index:1; }}
 
     /* ── Plotly chart: tarjeta de vidrio oscuro ── */
     div[data-testid="stPlotlyChart"] {{
@@ -837,23 +1397,6 @@ st.markdown(f"""
     .avance-tabla-wrap::-webkit-scrollbar {{ width:6px;height:6px; }}
     .avance-tabla-wrap::-webkit-scrollbar-track {{ background:rgba(255,255,255,0.04); }}
     .avance-tabla-wrap::-webkit-scrollbar-thumb {{ background:rgba(56,189,248,0.35);border-radius:99px; }}
-
-    /* ── Listas "Top" (rankings) ── */
-    .top-list {{ display:flex;flex-direction:column;gap:8px; }}
-    .top-row {{ display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:12px;
-        background:linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));
-        border:1px solid rgba(255,255,255,0.09);
-        transition:transform .2s ease,border-color .2s ease; }}
-    .top-row:hover {{ transform:translateX(4px);border-color:var(--ac); }}
-    .top-rank {{ font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:12px;
-        color:rgba(255,255,255,0.32);width:20px;flex-shrink:0; }}
-    .top-avatar {{ width:34px;height:34px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-        font-size:11.5px;font-weight:800;color:white;background:var(--ac);
-        box-shadow:0 4px 12px -3px var(--ac); }}
-    .top-body {{ flex:1;min-width:0; }}
-    .top-name {{ font-size:12.5px;font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-meta {{ font-size:10.5px;color:rgba(255,255,255,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-value {{ flex-shrink:0;font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:14px; }}
 
     /* ── Sidebar base ── */
     section[data-testid="stSidebar"] > div:first-child {{
@@ -968,11 +1511,6 @@ b = base_full.copy()
 mask = _mask_filtros(b) & (b["_FECHA"].dt.date >= fecha_ini) & (b["_FECHA"].dt.date <= fecha_fin)
 b = b[mask].copy()
 
-# Igual a `b` pero sin el recorte de Desde/Hasta: el comparativo de cumplimiento por
-# supervisor y mes necesita ver varios meses a la vez, y por defecto Desde/Hasta solo
-# cubren el mes en curso (para no arrastrar los residuales históricos de la Base).
-b_sin_fecha = base_full[_mask_filtros(base_full)].copy()
-
 _base_avance = base_full
 if cohorte_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COHORTE"] == cohorte_sel]
@@ -981,312 +1519,18 @@ if mes_sel != "Todos":
 _base_avance = _base_avance[(_base_avance["_FECHA"].dt.date >= fecha_ini) & (_base_avance["_FECHA"].dt.date <= fecha_fin)]
 tabla, total_general = _tabla_avance(_base_avance, metas_full, fecha_ini, fecha_fin)
 
-total_mat = len(b)
-_dias_habiles_sel = _dias_habiles_rango(fecha_ini, fecha_fin)
-ticket_dia = (total_mat / _dias_habiles_sel) if _dias_habiles_sel else 0.0
-cumplimiento = (total_general["REAL"] / total_general["META"] * 100) if total_general["META"] else 0
-
-_home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
-_insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
-_cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
-_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-
-# ─────────────────────────────────────────────
-# ENCABEZADO
-# ─────────────────────────────────────────────
-rango = f"{fecha_ini.strftime('%d/%m/%Y')} – {fecha_fin.strftime('%d/%m/%Y')}"
-with st.container(key="hdrbanner"):
-    st.markdown(f"""
-    <div class='hb-eyebrow'><span class='hb-dot'></span>Centro de Control · Uniminuto 2026</div>
-    <div class='hb-title'>Módulo de Matrículas</div>
-    <div class='hb-meta'>
-        <span class='hb-chip'>📅 <b>{rango}</b></span>
-        <span class='hb-chip'>🧭 Cohorte <b>{cohorte_sel}</b></span>
-    </div>
-    <div class='nav-lbl'>⚡ Navegación</div>
-    """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
-    with nb1:
-        if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
-            st.switch_page(_home_pg)
-    with nb2:
-        if st.button("📝 Inscripciones", key="hdr_insc", width="stretch"):
-            st.switch_page(_insc_pg)
-    with nb3:
-        st.button("🎓 Matrículas", key="hdr_mat", width="stretch", type="primary")
-    with nb4:
-        if st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch"):
-            st.switch_page(_cuart_pg)
-    with nb5:
-        if st.button("📞 Real time", key="hdr_cont", width="stretch"):
-            st.switch_page(_cont_pg)
-
-# ─────────────────────────────────────────────
-# KPIs
-# ─────────────────────────────────────────────
-def kpi_bar(pct, color, max_val=100):
-    fill = min(pct / max_val * 100, 100) if max_val else 0
-    return f"<div class='kpi-bar-wrap'><div class='kpi-bar-fill' style='width:{fill:.0f}%;background:{color};'></div></div>"
-
-
-cumpl_color = COLOR_SUCCESS if cumplimiento >= 100 else (COLOR_WARNING if cumplimiento >= 70 else COLOR_DANGER)
-ticket_color = "#818CF8"
-faltan_total = int(total_general["FALTAN"])
-faltan_color = COLOR_SUCCESS if faltan_total == 0 else COLOR_DANGER
-
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_ACCENT}'>
-        <div class='kpi-bg-icon'>🎓</div>
-        <div>
-            <div class='kpi-label'>Total matrículas</div>
-            <div class='kpi-value' style='color:#7DD3FC'>{total_mat:,}</div>
-            <div class='kpi-sub'>en el rango seleccionado</div>
-        </div>
-        {kpi_bar(total_mat, COLOR_ACCENT, max(total_mat, 1))}
-    </div>""", unsafe_allow_html=True)
-with k2:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{faltan_color}'>
-        <div class='kpi-bg-icon'>🚩</div>
-        <div>
-            <div class='kpi-label'>Faltan para la meta</div>
-            <div class='kpi-value' style='color:{faltan_color}'>{faltan_total:,}</div>
-            <div class='kpi-sub'>matrículas · suma de todos los supervisores</div>
-        </div>
-        {kpi_bar(faltan_total, faltan_color, max(int(total_general["META"]), 1))}
-    </div>""", unsafe_allow_html=True)
-with k3:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{cumpl_color}'>
-        <div class='kpi-bg-icon'>🎯</div>
-        <div>
-            <div class='kpi-label'>Cumplimiento meta día</div>
-            <div class='kpi-value' style='color:{cumpl_color}'>{cumplimiento:.0f}%</div>
-            <div class='kpi-sub'>real vs. meta prorrateada</div>
-        </div>
-        {kpi_bar(cumplimiento, cumpl_color)}
-    </div>""", unsafe_allow_html=True)
-with k4:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{ticket_color}'>
-        <div class='kpi-bg-icon'>📆</div>
-        <div>
-            <div class='kpi-label'>Ticket promedio día</div>
-            <div class='kpi-value' style='color:{ticket_color}'>{ticket_dia:,.1f}</div>
-            <div class='kpi-sub'>matrículas por día hábil · {_dias_habiles_sel} días en el rango</div>
-        </div>
-        {kpi_bar(ticket_dia, ticket_color, 100)}
-    </div>""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────
-# COMPARATIVOS
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#38BDF8'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(56,189,248,0.20),rgba(56,189,248,0.06))'>📐</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Comparativos</div>
-        <div class='sec-desc'>Evolución del cumplimiento por supervisor, comparativo por coordinador y patrón semanal de matrícula.</div>
-    </div>
-    <span class='sec-tag' style='background:#38BDF8'>Tendencias</span>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""<div class='chart-hdr' style='--cc:#38BDF8'>
-    <span class='ch-icon'>📈</span>
-    <div class='ch-texts'><div class='ch-title'>Cumplimiento por supervisor y mes</div><div class='ch-sub'>Top 8 supervisores por volumen · % real vs. meta mensual</div></div>
-</div>""", unsafe_allow_html=True)
-st.plotly_chart(_fig_supervisor_mes(b_sin_fecha, metas_full), width="stretch", config={"displayModeBar": False})
-
-_mapa_sup_coord = _mapa_supervisor_coordinador(base_full)
-ccol1, ccol2 = st.columns(2)
-with ccol1:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_PRIMARY}'>
-        <span class='ch-icon'>🧭</span>
-        <div class='ch-texts'><div class='ch-title'>Por coordinador</div><div class='ch-sub'>Real vs. faltan para la meta</div></div>
-    </div>""", unsafe_allow_html=True)
-    st.plotly_chart(_fig_coordinador(tabla, _mapa_sup_coord), width="stretch", config={"displayModeBar": False})
-with ccol2:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_ACCENT}'>
-        <span class='ch-icon'>🗓️</span>
-        <div class='ch-texts'><div class='ch-title'>Por día de la semana</div><div class='ch-sub'>Patrón operativo de contabilización</div></div>
-    </div>""", unsafe_allow_html=True)
-    st.plotly_chart(_fig_dia_semana(b), width="stretch", config={"displayModeBar": False})
-
-# ─────────────────────────────────────────────
-# AVANCE VS. META POR SUPERVISOR
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_PRIMARY}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(52,211,153,0.20),rgba(52,211,153,0.06))'>🎯</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Avance vs. Meta por Supervisor</div>
-        <div class='sec-desc'>Meta mensual (Meta matriculas) ÷ días hábiles del mes (lunes a sábado, sin festivos) × días hábiles del período seleccionado.</div>
-    </div>
-    <div class='sec-meta'>
-        <div class='sec-meta-val' style='color:{COLOR_PRIMARY}'>{_dias_habiles_rango(fecha_ini, fecha_fin)}/{_dias_habiles(fecha_fin.year, fecha_fin.month)}</div>
-        <div class='sec-meta-lab'>Días hábiles</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_PRIMARY}'>Plan vs. real</span>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
-    <span class='tbl-hdr-icon'>📋</span>
-    <div class='tbl-hdr-body'>
-        <div class='tbl-hdr-title'>Matrículas por Supervisor</div>
-        <div class='tbl-hdr-desc'>Real · Meta · Faltan · Cumplimiento — cohorte y período seleccionados</div>
-    </div>
-    <span class='tbl-hdr-badge'>{len(tabla)} supervisores</span>
-</div>""", unsafe_allow_html=True)
-_render_tabla_avance(tabla, total_general)
-
-st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_PRIMARY}'>
-    <span class='ch-icon'>📊</span>
-    <div class='ch-texts'>
-        <div class='ch-title'>Brecha Real − Meta día por supervisor</div>
-        <div class='ch-sub'>Verde: al día o adelantado · Rojo: por debajo de la meta</div>
-    </div>
-    <span class='ch-tag' style='color:{COLOR_PRIMARY}'>Diverging</span>
-</div>""", unsafe_allow_html=True)
-st.plotly_chart(_fig_avance(tabla), width="stretch", config={"displayModeBar": False})
-
-# ─────────────────────────────────────────────
-# DISTRIBUCIÓN
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#8B5CF6'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(139,92,246,0.20),rgba(139,92,246,0.06))'>🧩</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Distribución</div>
-        <div class='sec-desc'>Matrículas por programa, nivel de formación y forma de financiación.</div>
-    </div>
-    <span class='sec-tag' style='background:#8B5CF6'>Composición</span>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""<div class='chart-hdr' style='--cc:#818CF8'>
-    <span class='ch-icon'>🎓</span>
-    <div class='ch-texts'><div class='ch-title'>Top 10 programas</div><div class='ch-sub'>Sobre el rango y filtros seleccionados</div></div>
-</div>""", unsafe_allow_html=True)
-st.plotly_chart(_fig_programa(b), width="stretch", config={"displayModeBar": False})
-
-dcol1, dcol2 = st.columns(2)
-with dcol1:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_SUCCESS}'>
-        <span class='ch-icon'>📚</span>
-        <div class='ch-texts'><div class='ch-title'>Por nivel de formación</div><div class='ch-sub'>Pregrado · Especialización · Maestría</div></div>
-    </div>""", unsafe_allow_html=True)
-    st.plotly_chart(_fig_nivel(b), width="stretch", config={"displayModeBar": False})
-with dcol2:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:#818CF8'>
-        <span class='ch-icon'>🧭</span>
-        <div class='ch-texts'><div class='ch-title'>Por cohorte</div><div class='ch-sub'>Matrículas contabilizadas por cohorte de ingreso</div></div>
-    </div>""", unsafe_allow_html=True)
-    st.plotly_chart(_fig_cohorte(b), width="stretch", config={"displayModeBar": False})
-
-# ─────────────────────────────────────────────
-# TENDENCIA
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_ACCENT}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Tendencia</div>
-        <div class='sec-desc'>Matrículas contabilizadas por día en el rango seleccionado.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_ACCENT}'>Serie diaria</span>
-</div>
-""", unsafe_allow_html=True)
-st.plotly_chart(_fig_tendencia(b), width="stretch", config={"displayModeBar": False})
-
-# ─────────────────────────────────────────────
-# TOPS
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#F59E0B'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(245,158,11,0.20),rgba(245,158,11,0.06))'>🏅</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Tops y Rankings</div>
-        <div class='sec-desc'>Los asesores, matrículas y supervisores más destacados del período.</div>
-    </div>
-    <span class='sec-tag' style='background:#F59E0B'>Ranking</span>
-</div>
-""", unsafe_allow_html=True)
-
-_top_asesores = (
-    b.dropna(subset=["_ASESOR"]).groupby("_ASESOR")
-    .agg(total=("_ASESOR", "size"), sup=("_SUPERVISOR", "first"))
-    .sort_values("total", ascending=False).head(10)
+# Vista Executive BI integrada en esta página. La carga, los filtros globales y
+# la tabla de avance continúan trabajando sobre el mismo subconjunto filtrado.
+render(
+    base=b,
+    metas=metas_full,
+    fecha_ini=fecha_ini,
+    fecha_fin=fecha_fin,
+    tabla=tabla,
+    total_general=total_general,
+    render_table=_render_tabla_avance,
+    is_business_day=_es_habil,
+    global_supervisor=sup_sel,
+    global_agent=experto_sel,
 )
-_top_supervisores = (
-    b.dropna(subset=["_SUPERVISOR"]).groupby("_SUPERVISOR")
-    .agg(total=("_SUPERVISOR", "size"), expertos=("_ASESOR", "nunique"))
-    .sort_values("total", ascending=False).head(10)
-)
-_ultimas = b.dropna(subset=["_FECHA"]).sort_values("_FECHA", ascending=False).head(10)
-
-tcol1, tcol2, tcol3 = st.columns(3)
-with tcol1:
-    st.markdown("""<div class='chart-hdr' style='--cc:#38BDF8'>
-        <span class='ch-icon'>🧑‍💻</span>
-        <div class='ch-texts'><div class='ch-title'>Top 10 asesores</div><div class='ch-sub'>Con más matrículas</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [(nom, str(row["sup"]), f"{int(row['total'])}") for nom, row in _top_asesores.iterrows()]
-    st.markdown(_top_lista_html(_filas, "#38BDF8"), unsafe_allow_html=True)
-with tcol2:
-    st.markdown("""<div class='chart-hdr' style='--cc:#F59E0B'>
-        <span class='ch-icon'>🕓</span>
-        <div class='ch-texts'><div class='ch-title'>Top 10 últimas</div><div class='ch-sub'>Matrículas más recientes</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [
-        (row["NOMBRE_COMPLETO"], str(row["Programa"])[:28], row["_FECHA"].strftime("%d/%m/%Y"))
-        for _, row in _ultimas.iterrows()
-    ]
-    st.markdown(_top_lista_html(_filas, "#F59E0B"), unsafe_allow_html=True)
-with tcol3:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_SUCCESS}'>
-        <span class='ch-icon'>👥</span>
-        <div class='ch-texts'><div class='ch-title'>Top 10 supervisores</div><div class='ch-sub'>Por volumen total</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [
-        (sup, f"{int(row['expertos'])} expertos", f"{int(row['total'])}")
-        for sup, row in _top_supervisores.iterrows()
-    ]
-    st.markdown(_top_lista_html(_filas, COLOR_SUCCESS), unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────
-# DETALLE
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_PRIMARY}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(6,95,70,0.30),rgba(6,95,70,0.10))'>🔎</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Detalle</div>
-        <div class='sec-desc'>Listado de matrículas filtradas, descargable en Excel.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_PRIMARY}'>{total_mat} matrículas</span>
-</div>
-""", unsafe_allow_html=True)
-
-_detalle = b.copy()
-if "ID" in _detalle.columns:
-    # "ID" viene de la hoja "Base" (nº de matrícula). Se muestra como texto plano
-    # para evitar separadores de miles / notación científica en la tabla y el Excel.
-    _detalle["ID"] = pd.to_numeric(_detalle["ID"], errors="coerce").astype("Int64").astype("string").fillna("")
-cols_detalle = {
-    "ID": "ID MATRÍCULA",
-    "NOMBRE_COMPLETO": "NOMBRE", "Cedula": "CEDULA", "Programa": "PROGRAMA",
-    "Nivel Formación": "NIVEL", "COHORTE": "COHORTE", "PERIODO ACADEMICO": "PERIODO ACADÉMICO",
-    "_ASESOR": "EXPERTO", "_SUPERVISOR": "SUPERVISOR", "_COORDINADOR": "COORDINADOR",
-    "Fecha Contabilización": "FECHA CONTABILIZACIÓN",
-}
-_detalle = _detalle[[c for c in cols_detalle if c in _detalle.columns]].rename(columns=cols_detalle)
-
-st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
-    <span class='tbl-hdr-icon'>📑</span>
-    <div class='tbl-hdr-body'>
-        <div class='tbl-hdr-title'>Listado de Matrículas</div>
-        <div class='tbl-hdr-desc'>Registros individuales — cohorte y período seleccionados</div>
-    </div>
-    <span class='tbl-hdr-badge'>{total_mat} matrículas</span>
-</div>""", unsafe_allow_html=True)
-df_descarga(_detalle, "matriculas_detalle.xlsx", width="stretch", hide_index=True, height=360)
+st.stop()

@@ -111,6 +111,34 @@ def _valido(s) -> bool:
     return _norm(s) not in _VACIO
 
 
+def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
+    """Fusiona variantes del mismo nombre que llegan distintas entre hojas mensuales
+    (mayúsculas/tildes distintas, o un apellido de menos) SIN tocar la fuente: agrupa
+    por el conjunto de palabras normalizado (`_norm`) y, cuando el de un valor es
+    subconjunto del de otro (p. ej. 'Tatiana Martinez' ⊂ 'Tatiana Martinez Quintero'),
+    se queda con la variante más completa como forma canónica. A igualdad de palabras
+    (solo difieren en mayúsculas/tildes) también fusiona, quedándose con la más
+    frecuente. No toca nombres de una sola palabra (demasiado riesgo de fusionar
+    personas distintas) ni 'Sin asignar'/vacíos."""
+    frecuencia = serie.value_counts()
+    valores = [v for v in frecuencia.index if v and v != "Sin asignar"]
+    tokens = {v: frozenset(_norm(v).split()) for v in valores}
+    # Más palabras primero; a igual número de palabras, la variante más frecuente
+    # queda como ancla (cubre el caso de mayúsculas/tildes distintas).
+    orden = sorted((v for v in valores if len(tokens[v]) >= 2), key=lambda v: (-len(tokens[v]), -frecuencia[v]))
+    canonico: dict[str, str] = {}
+    anclas: list[tuple[frozenset, str]] = []
+    for v in orden:
+        t = tokens[v]
+        destino = next((c for ct, c in anclas if t <= ct), None)
+        if destino is None:
+            anclas.append((t, v))
+            canonico[v] = v
+        else:
+            canonico[v] = destino
+    return serie.map(lambda v: canonico.get(v, v))
+
+
 def norm_cohorte(valor) -> str:
     """'Sep-26' / 'jul-26' / 'Julio-2026' → 'Septiembre-2026' / 'Julio-2026'."""
     s = str(valor).strip()
@@ -397,6 +425,13 @@ def matriculas() -> pd.DataFrame:
     df.loc[_falta, "_COORDINADOR"] = (
         _col_coord[_falta].map(_res_coord).replace("", pd.NA).fillna("Sin asignar")
     )
+
+    # Las hojas de meses distintos no escriben el nombre de supervisor/coordinador
+    # siempre igual (mayúsculas, tildes, apellido faltante) — se consolidan variantes
+    # aquí en vez de en la fuente. Ver `_canonicalizar_nombres`.
+    df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
+    df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
+
     df["_DOC_ASESOR"] = rec.map(lambda r: r["documento"] if isinstance(r, dict) else "").fillna("")
     df["_CC"] = pd.to_numeric(df["_DOC_ASESOR"], errors="coerce").astype("Int64")
 
