@@ -252,10 +252,7 @@ st.markdown(f"""
     .hb-meta {{ display:flex;flex-wrap:wrap;gap:8px; }}
     .hb-chip {{ display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.13);border-radius:9px;padding:5px 11px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.74); }}
     .hb-chip b {{ color:#fff; }}
-    .nav-lbl {{ font-size:9px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.40);margin:9px 0 7px; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button {{ color:rgba(255,255,255,0.55) !important;border-radius:10px !important;font-size:10px !important;font-weight:700 !important;height:36px !important;min-height:36px !important;padding:0 13px !important;border:1px solid transparent !important;background:transparent !important;white-space:nowrap !important;transition:background .16s,color .16s,border-color .16s !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button:hover {{ color:white !important;background:rgba(255,255,255,0.045) !important;border-color:rgba(255,255,255,0.08) !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"] {{ color:#7DD3FC !important;border-color:color-mix(in srgb,#38BDF8 30%,transparent) !important;background:color-mix(in srgb,#38BDF8 14%,transparent) !important; }}
+    div.st-key-cont_module_nav{{margin:0 0 8px;padding:5px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03)}}div.st-key-cont_module_nav div[data-testid='stHorizontalBlock']{{gap:6px}}div.st-key-cont_module_nav button{{min-height:40px!important;border:1px solid transparent!important;border-radius:10px!important;background:transparent!important;color:rgba(255,255,255,.55)!important;box-shadow:none!important;font-size:11px!important;font-weight:650!important;transition:background .16s,color .16s,border-color .16s!important}}div.st-key-cont_module_nav button:hover{{color:white!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.08)!important}}div.st-key-cont_module_nav button[kind='primary']{{color:#7DD3FC!important;background:color-mix(in srgb,#38BDF8 14%,transparent)!important;border-color:color-mix(in srgb,#38BDF8 30%,transparent)!important;box-shadow:none!important}}
 
     .kpi-card {{ background:rgba(255,255,255,0.035);border-radius:16px;padding:18px 10px 15px;border:1px solid rgba(255,255,255,0.08);position:relative;text-align:center; }}
     .kpi-bg-icon {{ width:36px;height:36px;margin:0 auto 11px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;color:var(--kc,{COLOR_ACCENT});background:linear-gradient(150deg,color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 24%,transparent),color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 6%,transparent));border:1px solid color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 35%,transparent); }}
@@ -315,23 +312,24 @@ with st.container(key="hdrbanner"):
         <span class='hb-chip'>🔄 Última llamada <b>{_actualiz.strftime('%H:%M') if pd.notna(_actualiz) else '—'}</b></span>
         <span class='hb-chip'>{"🟢 En vivo" if _es_hoy else "🔒 Cerrado"}</span>
     </div>
-    <div class='nav-lbl'>⚡ Navegación</div>
     """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, _s = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
-    with nb1:
-        if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
+
+with st.container(key="cont_module_nav"):
+    n1, n2, n3, n4, n5 = st.columns(5)
+    with n1:
+        if st.button("⌂  Inicio", key="cont_nav_home", width="stretch"):
             st.switch_page(_home_pg)
-    with nb2:
-        if st.button("📝 Inscripciones", key="hdr_insc", width="stretch"):
+    with n2:
+        if st.button("▤  Inscripciones", key="cont_nav_ins", width="stretch"):
             st.switch_page(_insc_pg)
-    with nb3:
-        if st.button("🎓 Matrículas", key="hdr_mat", width="stretch"):
+    with n3:
+        if st.button("◆  Matriculas", key="cont_nav_mat", width="stretch"):
             st.switch_page(_mat_pg)
-    with nb4:
-        if st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch"):
+    with n4:
+        if st.button("◇  Cuartiles", key="cont_nav_q", width="stretch"):
             st.switch_page(_cuart_pg)
-    with nb5:
-        st.button("📞 Real time", key="hdr_cont", width="stretch", type="primary")
+    with n5:
+        st.button("●  Real time", key="cont_nav_rt", width="stretch", type="primary")
 
 # ─────────────────────────────────────────────
 # KPIs
