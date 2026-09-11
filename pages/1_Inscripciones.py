@@ -933,10 +933,13 @@ def _render_matrix_alerts(base, supervisor, month, is_business_day):
         _incident_cards(critical, critical=True)
 
 
-def _render_matrices(base,roster,is_business_day,global_supervisor):
+def _render_matrices(base,roster,roster_por_mes,is_business_day,global_supervisor):
     """`roster` es el universo COMPLETO de supervisores/agentes (sin recorte de fecha
-    ni de mes) — de ahí sale quién aparece en la matriz, para que un agente con cero
-    inscripciones en el mes elegido siga la fila en vez de desaparecer. `base` (ya
+    ni de mes) — de ahí sale la lista base de nombres posibles. Cada matriz se filtra
+    además por `roster_por_mes` (mismo directorio de Matrículas — es el mismo equipo
+    de personas, ver `_datos.roster_matriculas_por_mes`) usando el mes que ESE panel
+    está mostrando: alguien activo en un mes pero ya retirado despues sigue saliendo
+    en la matriz de ese mes, no en la de un mes donde ya no estaba. `base` (ya
     filtrada por fecha/mes) sigue siendo la fuente de los valores dia a dia."""
     months=_available_months(base)
     _panel_title("▦","Matriz diaria por Supervisor","Produccion por dia; gris es no laborable y vacio es futuro.","HEATMAP")
@@ -945,7 +948,8 @@ def _render_matrices(base,roster,is_business_day,global_supervisor):
     with mc2: metric_s=st.selectbox("Tipo de inscripcion",["Completas","Incompletas","Todas"],key="ins_v2_ms_metric")
     if month:
         cutoff=base.loc[base["_MONTH"]==month,"_DATE"].max().date()
-        rows=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar")
+        _,tok_sup,_=roster_por_mes.get(month,([],[],[]))
+        rows=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar" and _datos.nombre_activo_en(x,tok_sup))
         selected=_heatmap(base,"_SUP",rows,month,metric_s,is_business_day,"ins_v2_ms_heat",cutoff)
         if selected: _cell_detail(base,"_SUP",selected[0],month,selected[1])
     _panel_title("👤","Matriz diaria por Agente","Se construye solo para un supervisor, protegiendo el rendimiento de la pagina.","SEGUIMIENTO")
@@ -960,7 +964,8 @@ def _render_matrices(base,roster,is_business_day,global_supervisor):
         with ma1: month_a=st.selectbox("Mes de agentes",months,index=max(len(months)-1,0),key="ins_v2_ma_month")
         with ma2: metric_a=st.selectbox("Tipo de inscripcion",["Completas","Incompletas","Todas"],key="ins_v2_ma_metric")
         cutoff_a=base.loc[base["_MONTH"]==month_a,"_DATE"].max().date()
-        rows=sorted(x for x in roster.loc[roster["_SUP"]==supervisor,"_AGENT"].unique() if x!="Sin asignar")
+        tok_asesor,_,_=roster_por_mes.get(month_a,([],[],[]))
+        rows=sorted(x for x in roster.loc[roster["_SUP"]==supervisor,"_AGENT"].unique() if x!="Sin asignar" and _datos.nombre_activo_en(x,tok_asesor))
         selected=_heatmap(base[base["_SUP"]==supervisor],"_AGENT",rows,month_a,metric_a,is_business_day,"ins_v2_ma_heat",cutoff_a)
         if selected: _cell_detail(base,"_AGENT",selected[0],month_a,selected[1])
         _render_matrix_alerts(base, supervisor, month_a, is_business_day)
@@ -1259,9 +1264,10 @@ def _css():
     """,unsafe_allow_html=True)
 
 
-def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos", base_roster=None):
+def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos", base_roster=None, roster_por_mes=None):
     _css(); d=_prepare(base)
     d_roster=_prepare(base_roster) if base_roster is not None else d
+    roster_por_mes=roster_por_mes or {}
     st.markdown(
         f"<div class='ebi-top'><div class='ebi-top-copy'>"
         f"<div class='ebi-top-context'><i></i>INSCRIPCIONES</div>"
@@ -1303,7 +1309,7 @@ def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table
         render_table(tabla,total_general)
     with st.container(border=True): _render_gap(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     _section("D", "SEGUIMIENTO OPERATIVO")
-    with st.container(border=True): _render_matrices(d,d_roster,is_business_day,global_supervisor)
+    with st.container(border=True): _render_matrices(d,d_roster,roster_por_mes,is_business_day,global_supervisor)
     _section("E", "ANALISIS")
     with st.container(border=True): _render_analysis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_projection(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
@@ -1325,6 +1331,10 @@ except FileNotFoundError:
 # ─────────────────────────────────────────────
 base_full = _cargar_base()
 metas_full = _cargar_metas()
+# Mismo directorio (sociodemográfico) que usa Matrículas: es el mismo equipo de
+# supervisores/asesores, y esa hoja sí distingue quién sigue activo cada mes —
+# Inscripciones no tiene una propia. Ver `_datos.roster_matriculas_por_mes`.
+roster_por_mes = _datos.roster_matriculas_por_mes()
 hoy = date.today()
 
 _base_con_sup = base_full.copy()
@@ -1849,5 +1859,6 @@ render(
     global_supervisor=sup_sel,
     global_agent=agente_sel,
     base_roster=b_roster,
+    roster_por_mes=roster_por_mes,
 )
 st.stop()
