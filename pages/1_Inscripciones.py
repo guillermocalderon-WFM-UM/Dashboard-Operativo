@@ -933,7 +933,11 @@ def _render_matrix_alerts(base, supervisor, month, is_business_day):
         _incident_cards(critical, critical=True)
 
 
-def _render_matrices(base,is_business_day,global_supervisor):
+def _render_matrices(base,roster,is_business_day,global_supervisor):
+    """`roster` es el universo COMPLETO de supervisores/agentes (sin recorte de fecha
+    ni de mes) — de ahí sale quién aparece en la matriz, para que un agente con cero
+    inscripciones en el mes elegido siga la fila en vez de desaparecer. `base` (ya
+    filtrada por fecha/mes) sigue siendo la fuente de los valores dia a dia."""
     months=_available_months(base)
     _panel_title("▦","Matriz diaria por Supervisor","Produccion por dia; gris es no laborable y vacio es futuro.","HEATMAP")
     mc1,mc2=st.columns(2)
@@ -941,11 +945,11 @@ def _render_matrices(base,is_business_day,global_supervisor):
     with mc2: metric_s=st.selectbox("Tipo de inscripcion",["Completas","Incompletas","Todas"],key="ins_v2_ms_metric")
     if month:
         cutoff=base.loc[base["_MONTH"]==month,"_DATE"].max().date()
-        rows=sorted(x for x in base.loc[base["_MONTH"]==month,"_SUP"].unique() if x!="Sin asignar")
+        rows=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar")
         selected=_heatmap(base,"_SUP",rows,month,metric_s,is_business_day,"ins_v2_ms_heat",cutoff)
         if selected: _cell_detail(base,"_SUP",selected[0],month,selected[1])
     _panel_title("👤","Matriz diaria por Agente","Se construye solo para un supervisor, protegiendo el rendimiento de la pagina.","SEGUIMIENTO")
-    supervisors=sorted(x for x in base["_SUP"].unique() if x!="Sin asignar")
+    supervisors=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar")
     default=supervisors.index(global_supervisor)+1 if global_supervisor in supervisors else 0
     supervisor=st.selectbox("Supervisor",["Todos"]+supervisors,index=default,key="ins_v2_ma_sup")
     if supervisor=="Todos":
@@ -956,7 +960,7 @@ def _render_matrices(base,is_business_day,global_supervisor):
         with ma1: month_a=st.selectbox("Mes de agentes",months,index=max(len(months)-1,0),key="ins_v2_ma_month")
         with ma2: metric_a=st.selectbox("Tipo de inscripcion",["Completas","Incompletas","Todas"],key="ins_v2_ma_metric")
         cutoff_a=base.loc[base["_MONTH"]==month_a,"_DATE"].max().date()
-        rows=sorted(x for x in base.loc[(base["_SUP"]==supervisor)&(base["_MONTH"]==month_a),"_AGENT"].unique() if x!="Sin asignar")
+        rows=sorted(x for x in roster.loc[roster["_SUP"]==supervisor,"_AGENT"].unique() if x!="Sin asignar")
         selected=_heatmap(base[base["_SUP"]==supervisor],"_AGENT",rows,month_a,metric_a,is_business_day,"ins_v2_ma_heat",cutoff_a)
         if selected: _cell_detail(base,"_AGENT",selected[0],month_a,selected[1])
         _render_matrix_alerts(base, supervisor, month_a, is_business_day)
@@ -1255,8 +1259,9 @@ def _css():
     """,unsafe_allow_html=True)
 
 
-def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos"):
+def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos", base_roster=None):
     _css(); d=_prepare(base)
+    d_roster=_prepare(base_roster) if base_roster is not None else d
     st.markdown(
         f"<div class='ebi-top'><div class='ebi-top-copy'>"
         f"<div class='ebi-top-context'><i></i>INSCRIPCIONES</div>"
@@ -1298,7 +1303,7 @@ def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table
         render_table(tabla,total_general)
     with st.container(border=True): _render_gap(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     _section("D", "SEGUIMIENTO OPERATIVO")
-    with st.container(border=True): _render_matrices(d,is_business_day,global_supervisor)
+    with st.container(border=True): _render_matrices(d,d_roster,is_business_day,global_supervisor)
     _section("E", "ANALISIS")
     with st.container(border=True): _render_analysis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_projection(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
@@ -1791,6 +1796,24 @@ if agente_sel != "Todos":
     mask &= b["NOMBRE AGENT"] == agente_sel
 b = b[mask].copy()
 
+# Universo de supervisores/agentes para las matrices (Sección D): igual que `b` pero
+# sin recorte de Mes ni de fecha, para que quien no tuvo inscripciones en el periodo/mes
+# elegido siga apareciendo en la fila (con ceros) en vez de desaparecer.
+mask_roster = _base_con_sup["SUPERVISOR"].notna()
+if cohorte_sel != "Todos":
+    mask_roster &= _base_con_sup["COHORTE"] == cohorte_sel
+if coord_sel != "Todos":
+    mask_roster &= _base_con_sup["COORDINADOR"] == coord_sel
+if sup_sel != "Todos":
+    mask_roster &= _base_con_sup["_SUPERVISOR"] == sup_sel
+if nivel_sel != "Todos":
+    mask_roster &= _base_con_sup["NIVEL"] == nivel_sel
+if prog_sel != "Todos":
+    mask_roster &= _base_con_sup["PROGRAMA"] == prog_sel
+if agente_sel != "Todos":
+    mask_roster &= _base_con_sup["NOMBRE AGENT"] == agente_sel
+b_roster = _base_con_sup[mask_roster].copy()
+
 _base_avance = base_full
 if cohorte_sel != "Todos":
     _base_avance = _base_avance[_base_avance["COHORTE"] == cohorte_sel]
@@ -1825,5 +1848,6 @@ render(
     is_business_day=_es_habil,
     global_supervisor=sup_sel,
     global_agent=agente_sel,
+    base_roster=b_roster,
 )
 st.stop()
