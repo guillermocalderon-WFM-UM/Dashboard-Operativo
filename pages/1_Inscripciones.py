@@ -228,6 +228,11 @@ MONTHS = [
 ]
 WEEKDAYS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"]
 PALETTE = [BLUE, TEAL, INDIGO, AMBER, "#EC4899", "#22D3EE", "#A3E635", "#FB7185"]
+METRIC_STYLES = {
+    "Completas": {"column": "COMPLETAS", "dash": "solid", "symbol": "circle"},
+    "Incompletas": {"column": "INCOMPLETAS", "dash": "dot", "symbol": "diamond"},
+    "Total": {"column": "TOTAL", "dash": "dash", "symbol": "square"},
+}
 
 
 def _layout(height: int = 360, **kwargs) -> dict:
@@ -309,6 +314,32 @@ def _multiselect_all(label: str, options: list[str], key: str, default_all: bool
     )
 
 
+def _metric_combo_change(key: str) -> None:
+    """Permite una métrica base o una métrica base acompañada por Total."""
+    current = list(st.session_state.get(key, []))
+    previous = list(st.session_state.get(f"{key}__previous", []))
+    if not current:
+        current = ["Completas"]
+    if "Completas" in current and "Incompletas" in current:
+        newly_added = [m for m in current if m not in previous and m != "Total"]
+        keep = newly_added[-1] if newly_added else "Completas"
+        current = [m for m in current if m not in {"Completas", "Incompletas"}]
+        current.insert(0, keep)
+    st.session_state[key] = [m for m in METRIC_STYLES if m in current]
+    st.session_state[f"{key}__previous"] = list(st.session_state[key])
+
+
+def _metric_multiselect(key: str) -> list[str]:
+    default = ["Completas"]
+    had_value = key in st.session_state
+    st.session_state.setdefault(f"{key}__previous", default)
+    selected = st.multiselect(
+        "Tipo de inscripcion", list(METRIC_STYLES), default=None if had_value else default, key=key,
+        max_selections=2, on_change=_metric_combo_change, args=(key,),
+    )
+    return selected or default
+
+
 def _rgba(hex_color: str, alpha: float) -> str:
     value = hex_color.lstrip("#")
     red, green, blue = (int(value[i:i + 2], 16) for i in (0, 2, 4))
@@ -369,12 +400,14 @@ def _meta_rows(metas: pd.DataFrame, supervisors: list[str], months: list[str], a
     if cc:
         m = m.drop_duplicates([cc, "MES", "AÑO"] if "AÑO" in m else [cc, "MES"])
     m["_META_COMP"] = pd.to_numeric(m.get("Meta inscripciones completas", 0), errors="coerce").fillna(0)
+    m["_META_TOTAL"] = pd.to_numeric(m.get("Meta inscripciones", 0), errors="coerce").fillna(0)
+    m["_META_INCOMP"] = (m["_META_TOTAL"] - m["_META_COMP"]).clip(lower=0)
     return m
 
 
 def _meta_by_supervisor(
     metas: pd.DataFrame, supervisors: list[str], months: list[str], start: date, end: date,
-    reference: str, is_business_day, agents: list[str] | None = None,
+    reference: str, is_business_day, agents: list[str] | None = None, metric: str = "Completas",
 ) -> pd.DataFrame:
     m = _meta_rows(metas, supervisors, months, agents)
     if m.empty:
@@ -396,22 +429,31 @@ def _meta_by_supervisor(
         m["_FACTOR"] = [factors.get((row.MES, int(row.AÑO)), 0) for row in m.itertuples()]
     else:
         m["_FACTOR"] = 1.0
-    m["META"] = m["_META_COMP"] * m["_FACTOR"]
+    target_column = {
+        "Completas": "_META_COMP", "Incompletas": "_META_INCOMP", "Total": "_META_TOTAL",
+    }.get(metric, "_META_COMP")
+    m["META"] = m[target_column] * m["_FACTOR"]
     return (
         m.groupby(["SUPERVISOR", "MES"], as_index=False)["META"].sum()
         .rename(columns={"SUPERVISOR": "_SUP", "MES": "_MONTH"})
     )
 
 
-def _supervisor_month(base: pd.DataFrame, supervisors: list[str], months: list[str]) -> pd.DataFrame:
+def _supervisor_month(base: pd.DataFrame, supervisors: list[str], months: list[str], metric: str = "Completas") -> pd.DataFrame:
     grid = pd.MultiIndex.from_product([supervisors, months], names=["_SUP", "_MONTH"]).to_frame(index=False)
-    real = base[base["_SUP"].isin(supervisors) & base["_MONTH"].isin(months)].groupby(["_SUP", "_MONTH"])["_COMP"].sum().rename("REAL")
+    observed = (
+        base[base["_SUP"].isin(supervisors) & base["_MONTH"].isin(months)]
+        .groupby(["_SUP", "_MONTH"])
+        .agg(COMPLETAS=("_COMP", "sum"), TOTAL=("_COMP", "size"))
+    )
+    observed["INCOMPLETAS"] = observed["TOTAL"] - observed["COMPLETAS"]
+    real = observed[METRIC_STYLES[metric]["column"]].rename("REAL")
     # Un cero calculado desde registros existentes es un dato real. En cambio, un
     # cruce supervisor/mes sin registros queda como NaN para cortar la traza.
     return grid.join(real, on=["_SUP", "_MONTH"])
 
 
-def _supervisor_daily(base, metas, supervisors, months, start, end, is_business_day, reference, meta_agents=None):
+def _supervisor_daily(base, metas, supervisors, months, start, end, is_business_day, reference, meta_agents=None, metric="Completas"):
     subset = base[base["_SUP"].isin(supervisors) & base["_MONTH"].isin(months)].copy()
     if subset.empty:
         return pd.DataFrame()
@@ -422,13 +464,16 @@ def _supervisor_daily(base, metas, supervisors, months, start, end, is_business_
         if MONTHS[ts.month - 1] in months
     ]
     grid = pd.MultiIndex.from_product([supervisors, dates], names=["_SUP", "_DAY_DATE"]).to_frame(index=False)
-    real = subset.groupby(["_SUP", subset["_DATE"].dt.date])["_COMP"].sum().rename("REAL")
+    subset["_DAY_DATE"] = subset["_DATE"].dt.date
+    observed = subset.groupby(["_SUP", "_DAY_DATE"]).agg(COMPLETAS=("_COMP", "sum"), TOTAL=("_COMP", "size"))
+    observed["INCOMPLETAS"] = observed["TOTAL"] - observed["COMPLETAS"]
+    real = observed[METRIC_STYLES[metric]["column"]].rename("REAL")
     # Los días sin ningún registro deben ser huecos visuales, no producción cero.
     out = grid.join(real, on=["_SUP", "_DAY_DATE"])
     out["_DATE_X"] = pd.to_datetime(out["_DAY_DATE"], errors="coerce")
     out["_MONTH"] = out["_DAY_DATE"].map(lambda d: MONTHS[d.month - 1])
     monthly = _meta_by_supervisor(
-        metas, supervisors, months, start, end, "Meta mensual", is_business_day, meta_agents,
+        metas, supervisors, months, start, end, "Meta mensual", is_business_day, meta_agents, metric,
     ).rename(columns={"META": "META_MONTH"})
     out = out.merge(monthly, how="left", on=["_SUP", "_MONTH"])
     business_counts = {}
@@ -465,12 +510,14 @@ def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
         selected_months = _multiselect_all("Meses", months, "ins_v2_sup_months")
         selected_months = [month for month in months if month in selected_months]
     references = ["Meta diaria", "Meta acumulada al corte", "Sin meta"] if granularity == "Diario" else ["Meta mensual", "Meta acumulada al corte", "Sin meta"]
-    c4, c5, c6 = st.columns([1.15, 1.0, 1.55])
+    c4, c5, c6, c7 = st.columns([1.35, 1.05, .95, 1.35])
     with c4:
-        reference = st.selectbox("Referencia / Meta", references, key="ins_v2_sup_ref")
+        selected_metrics = _metric_multiselect("ins_v3_sup_metric")
     with c5:
-        view = st.selectbox("Visualizacion", ["Real + Meta", "Solo Real", "Brecha"], key="ins_v2_sup_view")
+        reference = st.selectbox("Referencia / Meta", references, key="ins_v2_sup_ref")
     with c6:
+        view = st.selectbox("Visualizacion", ["Real + Meta", "Solo Real", "Brecha"], key="ins_v2_sup_view")
+    with c7:
         bands = _exclusive_multiselect("Bandas de meta", selected, "ins_v2_sup_band", "Ninguna", ["Ninguna"])
     if not selected:
         st.info("Selecciona uno o varios supervisores para comparar su comportamiento.")
@@ -480,18 +527,30 @@ def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
         return
     chips = "".join(f"<span style='--dot:{PALETTE[i % len(PALETTE)]}'>● {_safe(s)}</span>" for i, s in enumerate(selected)) if len(selected) <= 5 else f"<span>{len(selected)} supervisores seleccionados</span>"
     st.markdown(f"<div class='ebi-selected'>{chips}</div>", unsafe_allow_html=True)
-    if granularity == "Diario":
-        d = _supervisor_daily(base, metas, selected, selected_months, start, end, is_business_day, reference, global_agents)
-        xcol, sort_col, order = "_DATE_X", "_DATE_X", sorted(d["_DATE_X"].dropna().unique())
-    else:
-        d = _supervisor_month(base, selected, selected_months)
-        meta = _meta_by_supervisor(metas, selected, selected_months, start, end, reference, is_business_day, global_agents)
-        d = d.merge(meta, how="left", on=["_SUP", "_MONTH"])
-        # El texto del mes es solo la etiqueta. El orden de la traza usa un índice
-        # calendario explícito; ordenar `_MONTH` directamente sería alfabético y
-        # haría que la línea se devolviera sobre un eje visual enero→diciembre.
-        d["_MONTH_ORDER"] = d["_MONTH"].map({month: pos for pos, month in enumerate(MONTHS)})
-        xcol, sort_col, order = "_MONTH", "_MONTH_ORDER", selected_months
+    metric_frames = []
+    for metric in selected_metrics:
+        if granularity == "Diario":
+            metric_data = _supervisor_daily(
+                base, metas, selected, selected_months, start, end,
+                is_business_day, reference, global_agents, metric,
+            )
+            xcol, sort_col = "_DATE_X", "_DATE_X"
+            order = sorted(metric_data["_DATE_X"].dropna().unique())
+        else:
+            metric_data = _supervisor_month(base, selected, selected_months, metric)
+            meta = _meta_by_supervisor(
+                metas, selected, selected_months, start, end, reference,
+                is_business_day, global_agents, metric,
+            )
+            metric_data = metric_data.merge(meta, how="left", on=["_SUP", "_MONTH"])
+            # La etiqueta del mes nunca se usa para ordenar la trayectoria.
+            metric_data["_MONTH_ORDER"] = metric_data["_MONTH"].map(
+                {month: pos for pos, month in enumerate(MONTHS)}
+            )
+            xcol, sort_col, order = "_MONTH", "_MONTH_ORDER", selected_months
+        metric_data["METRIC"] = metric
+        metric_frames.append(metric_data)
+    d = pd.concat(metric_frames, ignore_index=True)
     if reference == "Sin meta":
         d["META"] = np.nan
     elif granularity == "Mensual":
@@ -504,36 +563,49 @@ def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
     color_by_supervisor = {sup: PALETTE[i % len(PALETTE)] for i, sup in enumerate(selected)}
     active_bands = bands if reference != "Sin meta" and view == "Real + Meta" else []
     for band_supervisor in active_bands:
-        f = d[d["_SUP"] == band_supervisor].sort_values(sort_col).copy()
-        # La referencia visual interpola solo huecos no laborables para formar un
-        # corredor continuo; los valores productivos y la meta de días hábiles no cambian.
-        visual_meta = f["META"].interpolate(limit_direction="both") if granularity == "Diario" else f["META"]
-        f["BAND_META"] = visual_meta; f["BAND_LOW"] = visual_meta * .9; f["BAND_HIGH"] = visual_meta * 1.1
-        color = color_by_supervisor[band_supervisor]
-        band_custom = np.column_stack([f["BAND_META"], f["BAND_LOW"], f["BAND_HIGH"]])
-        band_time = "%{x|%d/%m/%Y}" if granularity == "Diario" else "%{x}"
-        fig.add_scatter(x=f[xcol], y=f["BAND_HIGH"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
-        fig.add_scatter(x=f[xcol], y=f["BAND_LOW"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), fill="tonexty", fillcolor=_rgba(color,.07), customdata=band_custom, hovertemplate=f"<b>{_safe(band_supervisor)}</b><br>{band_time}<br>Meta: %{{customdata[0]:,.1f}}<br>Rango: %{{customdata[1]:,.1f}} – %{{customdata[2]:,.1f}}<extra>Banda de tolerancia ±10 %</extra>", showlegend=False)
-        fig.add_scatter(x=f[xcol], y=f["BAND_META"], mode="lines", line=dict(color=_rgba(color,.72), width=1.4, dash="dash", shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
+        for metric in selected_metrics:
+            f = d[(d["_SUP"] == band_supervisor) & (d["METRIC"] == metric)].sort_values(sort_col).copy()
+            # La referencia visual interpola solo huecos no laborables para formar un
+            # corredor continuo; los valores productivos y la meta de días hábiles no cambian.
+            visual_meta = f["META"].interpolate(limit_direction="both") if granularity == "Diario" else f["META"]
+            f["BAND_META"] = visual_meta; f["BAND_LOW"] = visual_meta * .9; f["BAND_HIGH"] = visual_meta * 1.1
+            color = color_by_supervisor[band_supervisor]
+            band_custom = np.column_stack([f["BAND_META"], f["BAND_LOW"], f["BAND_HIGH"]])
+            band_time = "%{x|%d/%m/%Y}" if granularity == "Diario" else "%{x}"
+            fig.add_scatter(x=f[xcol], y=f["BAND_HIGH"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
+            fig.add_scatter(x=f[xcol], y=f["BAND_LOW"], mode="lines", line=dict(color=_rgba(color,.24), width=.8, shape="spline", smoothing=.35), fill="tonexty", fillcolor=_rgba(color,.07), customdata=band_custom, hovertemplate=f"<b>{_safe(band_supervisor)} · {_safe(metric)}</b><br>{band_time}<br>Meta: %{{customdata[0]:,.1f}}<br>Rango: %{{customdata[1]:,.1f}} – %{{customdata[2]:,.1f}}<extra>Banda de tolerancia ±10 %</extra>", showlegend=False)
+            fig.add_scatter(x=f[xcol], y=f["BAND_META"], mode="lines", line=dict(color=_rgba(color,.72), width=1.4, dash="dashdot", shape="spline", smoothing=.35), hoverinfo="skip", showlegend=False)
     if view == "Brecha" and reference != "Sin meta":
         fig.add_hline(y=0, line=dict(color=INDIGO, width=1.5, dash="dash"))
     for i, sup in enumerate(selected):
-        s = d[d["_SUP"] == sup].sort_values(sort_col)
-        y = s["GAP"] if view == "Brecha" and reference != "Sin meta" else s["REAL"]
-        custom = np.column_stack([s["REAL"], s["META"], s["LOW"], s["HIGH"], s["GAP"], s["PCT"], s["STATUS"]])
-        time_hover = "%{x|%d/%m/%Y}<br>Mes: %{x|%B}" if granularity == "Diario" else "Mes: %{x}"
+        for metric in selected_metrics:
+            style = METRIC_STYLES[metric]
+            s = d[(d["_SUP"] == sup) & (d["METRIC"] == metric)].sort_values(sort_col)
+            y = s["GAP"] if view == "Brecha" and reference != "Sin meta" else s["REAL"]
+            custom = np.column_stack([s["REAL"], s["META"], s["LOW"], s["HIGH"], s["GAP"], s["PCT"], s["STATUS"]])
+            time_hover = "%{x|%d/%m/%Y}<br>Mes: %{x|%B}" if granularity == "Diario" else "Mes: %{x}"
+            fig.add_scatter(
+                x=s[xcol], y=y, mode="lines+markers", name=f"{sup} · {metric}", showlegend=False,
+                connectgaps=False,
+                line=dict(color=color_by_supervisor[sup], width=2.8 if metric == "Total" else 2.4, dash=style["dash"], shape="spline", smoothing=.35),
+                marker=dict(symbol=style["symbol"], size=5.5, color=color_by_supervisor[sup], opacity=.82, line=dict(color="#071712", width=.8)),
+                customdata=custom,
+                hovertemplate=("<b>%{fullData.name}</b><br>" + time_hover + "<br>Real: %{customdata[0]:,.0f}<br>Meta esperada: %{customdata[1]:,.1f}"
+                               "<br>Rango objetivo: %{customdata[2]:,.1f} – %{customdata[3]:,.1f}<br>Brecha: %{customdata[4]:+,.1f}"
+                               "<br>Cumplimiento: %{customdata[5]:.1f} %<br>Estado: %{customdata[6]}<extra></extra>"),
+            )
+    for metric in selected_metrics:
+        style = METRIC_STYLES[metric]
         fig.add_scatter(
-            x=s[xcol], y=y, mode="lines+markers", name=sup, showlegend=False,
-            connectgaps=False,
-            line=dict(color=color_by_supervisor[sup], width=2.6, shape="spline", smoothing=.35),
-            marker=dict(size=5.5, color=color_by_supervisor[sup], opacity=.82, line=dict(color="#071712", width=.8)),
-            customdata=custom,
-            hovertemplate=("<b>%{fullData.name}</b><br>" + time_hover + "<br>Completas: %{customdata[0]:,.0f}<br>Meta esperada: %{customdata[1]:,.1f}"
-                           "<br>Rango objetivo: %{customdata[2]:,.1f} – %{customdata[3]:,.1f}<br>Brecha: %{customdata[4]:+,.1f}"
-                           "<br>Cumplimiento: %{customdata[5]:.1f} %<br>Estado: %{customdata[6]}<extra></extra>"),
+            x=[None], y=[None], mode="lines+markers", name=metric,
+            line=dict(color="rgba(255,255,255,.72)", width=2.5, dash=style["dash"]),
+            marker=dict(symbol=style["symbol"], size=6, color="rgba(255,255,255,.72)"),
+            hoverinfo="skip", showlegend=True,
         )
     xaxis = {**AXIS, "tickformat": "%d %b", "nticks": 16} if granularity == "Diario" else {**AXIS, "categoryorder": "array", "categoryarray": order}
-    fig.update_layout(**_layout(455, margin=dict(l=52, r=28, t=12, b=45)), showlegend=False, hovermode="closest", xaxis=xaxis, yaxis={**AXIS, "title": "Brecha" if view == "Brecha" else ("Completas acumuladas" if reference == "Meta acumulada al corte" and granularity == "Diario" else "Inscripciones completas")})
+    axis_metric = selected_metrics[0] if len(selected_metrics) == 1 else "Inscripciones"
+    ytitle = "Brecha" if view == "Brecha" else (f"{axis_metric} acumuladas" if reference == "Meta acumulada al corte" and granularity == "Diario" else axis_metric)
+    fig.update_layout(**_layout(455, margin=dict(l=52, r=28, t=12, b=45)), showlegend=True, hovermode="closest", xaxis=xaxis, yaxis={**AXIS, "title": ytitle})
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
@@ -544,11 +616,13 @@ def _coord_map(base: pd.DataFrame) -> dict[str, str]:
     return d.groupby("_SUP")["_COORD"].agg(lambda s: s.mode().iat[0]).to_dict()
 
 
-def _coordinator_data(base, metas, coords, months, start, end, is_business_day, meta_agents=None, reference="Meta acumulada al corte"):
+def _coordinator_data(base, metas, coords, months, start, end, is_business_day, meta_agents=None, reference="Meta acumulada al corte", metric="Completas"):
     b = base[base["_COORD"].isin(coords) & base["_MONTH"].isin(months)]
-    real = b.groupby(["_COORD", "_MONTH"])["_COMP"].sum().rename("REAL").reset_index()
+    real = b.groupby(["_COORD", "_MONTH"]).agg(COMPLETAS=("_COMP", "sum"), TOTAL=("_COMP", "size"))
+    real["INCOMPLETAS"] = real["TOTAL"] - real["COMPLETAS"]
+    real = real[METRIC_STYLES[metric]["column"]].rename("REAL").reset_index()
     sups = sorted(b["_SUP"].unique())
-    mm = _meta_by_supervisor(metas, sups, months, start, end, reference, is_business_day, meta_agents)
+    mm = _meta_by_supervisor(metas, sups, months, start, end, reference, is_business_day, meta_agents, metric)
     mapping = _coord_map(b)
     mm["_COORD"] = mm["_SUP"].map(mapping)
     mt = mm.groupby(["_COORD", "_MONTH"])["META"].sum().reset_index()
@@ -562,22 +636,23 @@ def _render_coordinator(base, metas, start, end, is_business_day, meta_agents=No
     _panel_title("🧭", "Cumplimiento por Coordinador", "Produccion, meta y brecha por frente de coordinacion.", "BULLET")
     coords = sorted(x for x in base["_COORD"].unique() if x != "Sin asignar")
     months = _available_months(base)
-    c1, c2, c3, c4 = st.columns([1.6, 1.35, 1.25, 1])
+    c1, c2, c3, c4, c5 = st.columns([1.45, 1.2, .9, 1.15, .9])
     with c1: selected = _multiselect_all("Coordinador", coords, "ins_v2_coord")
     with c2:
         selected_months = _multiselect_all("Mes", months, "ins_v2_coord_month")
         selected_months = [month for month in months if month in selected_months]
-    with c3: order = st.selectbox("Ordenar por", ["Mayor produccion", "Mayor cumplimiento", "Mayor deficit", "Mayor superavit", "Alfabetico"], key="ins_v2_coord_order")
-    with c4: view = st.selectbox("Vista", ["Real vs Meta", "Brecha", "Evolucion"], key="ins_v2_coord_view")
+    with c3: metric = st.selectbox("Tipo de inscripcion", list(METRIC_STYLES), key="ins_v3_coord_metric")
+    with c4: order = st.selectbox("Ordenar por", ["Mayor produccion", "Mayor cumplimiento", "Mayor deficit", "Mayor superavit", "Alfabetico"], key="ins_v2_coord_order")
+    with c5: view = st.selectbox("Vista", ["Real vs Meta", "Brecha", "Evolucion"], key="ins_v2_coord_view")
     if not selected or not selected_months:
         st.info("No hay coordinadores disponibles para esta seleccion."); return
-    d = _coordinator_data(base, metas, selected, selected_months, start, end, is_business_day, meta_agents)
+    d = _coordinator_data(base, metas, selected, selected_months, start, end, is_business_day, meta_agents, metric=metric)
     if view == "Evolucion":
         fig = go.Figure()
         for i, coord in enumerate(selected):
             s = d[d["_COORD"] == coord].set_index("_MONTH").reindex(selected_months).reset_index()
             fig.add_scatter(x=selected_months, y=s["REAL"], mode="lines+markers", name=coord, line=dict(width=2.5, color=PALETTE[i % len(PALETTE)], shape="spline", smoothing=.55), customdata=np.column_stack([s["META"], s["GAP"], s["PCT"]]), hovertemplate="<b>%{fullData.name}</b><br>%{x}<br>Real: %{y:,.0f}<br>Meta: %{customdata[0]:,.0f}<br>Brecha: %{customdata[1]:+,.0f}<br>Cumplimiento: %{customdata[2]:.1f}%<extra></extra>")
-        fig.update_layout(**_layout(380), xaxis=AXIS, yaxis={**AXIS, "title": "Completas"})
+        fig.update_layout(**_layout(380), xaxis=AXIS, yaxis={**AXIS, "title": metric})
     else:
         a = d.groupby("_COORD", as_index=False)[["REAL", "META"]].sum(); a["GAP"] = a["REAL"] - a["META"]; a["PCT"] = np.where(a["META"] > 0, a["REAL"] / a["META"] * 100, np.nan)
         if order == "Mayor produccion": a = a.sort_values("REAL")
@@ -933,35 +1008,248 @@ def _render_analysis(base,metas,start,end,is_business_day,meta_agents=None):
 
 def _render_projection(base,metas,start,end,is_business_day,meta_agents=None):
     _panel_title("◎","Proyeccion de Cierre de Mes","Estimacion lineal por ritmo observado en dias habiles.","FORECAST")
-    months=_available_months(base); c1,c2,c3=st.columns(3)
+    months=_available_months(base); c1,c2,c3,c4=st.columns(4)
     with c1: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="ins_v2_f_month") if months else None
-    with c2: level=st.selectbox("Nivel",["General","Coordinador","Supervisor"],key="ins_v2_f_level")
+    with c2: metric=st.selectbox("Tipo de inscripcion",list(METRIC_STYLES),key="ins_v3_f_metric")
+    with c3: level=st.selectbox("Nivel",["General","Coordinador","Supervisor"],key="ins_v2_f_level")
     if not month:return
     d=base[base["_MONTH"]==month]
     options=["General"] if level=="General" else sorted(x for x in d["_COORD" if level=="Coordinador" else "_SUP"].unique() if x!="Sin asignar")
-    with c3: entity=st.selectbox(level,options,key="ins_v2_f_entity")
+    with c4: entity=st.selectbox(level,options,key="ins_v2_f_entity")
     if level!="General": d=d[d["_COORD" if level=="Coordinador" else "_SUP"]==entity]
     if d.empty:st.info("Sin datos para proyectar.");return
     cutoff=d["_DATE"].max().date(); mn=cutoff.month; year=cutoff.year; elapsed=len(_business_dates(year,mn,cutoff,is_business_day)); month_end=date(year,mn,calendar.monthrange(year,mn)[1]); total_days=len(_business_dates(year,mn,month_end,is_business_day))
-    actual=int(d["_COMP"].sum()); projection=actual/elapsed*total_days if elapsed else 0
-    sups=sorted(d["_SUP"].unique()); target=float(_meta_by_supervisor(metas,sups,[month],date(year,mn,1),month_end,"Meta mensual",is_business_day,meta_agents).META.sum())
+    complete=int(d["_COMP"].sum()); total=int(len(d)); incomplete=total-complete
+    actual={"Completas":complete,"Incompletas":incomplete,"Total":total}[metric]
+    projection=actual/elapsed*total_days if elapsed else 0
+    sups=sorted(d["_SUP"].unique()); target=float(_meta_by_supervisor(metas,sups,[month],date(year,mn,1),month_end,"Meta mensual",is_business_day,meta_agents,metric).META.sum())
     gap=projection-target; xmax=max(target,projection,actual,1)*1.12
-    st.markdown(f"<div class='ebi-forecast'><span>META<b>{target:,.0f}</b></span><span>ACTUAL<b>{actual:,.0f}</b></span><span>PROYECCION<b>{projection:,.0f}</b></span><span>BRECHA PROYECTADA<b style='color:{GREEN if gap>=0 else RED}'>{gap:+,.0f}</b></span></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='ebi-forecast'><span>META · {metric.upper()}<b>{target:,.0f}</b></span><span>ACTUAL · {metric.upper()}<b>{actual:,.0f}</b></span><span>PROYECCION · {metric.upper()}<b>{projection:,.0f}</b></span><span>BRECHA PROYECTADA<b style='color:{GREEN if gap>=0 else RED}'>{gap:+,.0f}</b></span></div>",unsafe_allow_html=True)
     fig=go.Figure(); fig.add_bar(y=[entity],x=[actual],orientation="h",marker_color=GREEN,width=.28,name="Actual",hovertemplate="Actual: %{x:,.0f}<extra></extra>"); fig.add_scatter(x=[projection],y=[entity],mode="markers",marker=dict(symbol="diamond",size=14,color=BLUE),name="Proyeccion",hovertemplate="Proyeccion: %{x:,.0f}<extra></extra>"); fig.add_scatter(x=[target],y=[entity],mode="markers",marker=dict(symbol="line-ns-open",size=28,color="white",line=dict(width=3)),name="Meta",hovertemplate="Meta: %{x:,.0f}<extra></extra>"); fig.add_shape(type="line",x0=actual,x1=projection,y0=0,y1=0,line=dict(color=BLUE,width=3,dash="dot")); fig.update_layout(**_layout(230),xaxis={**AXIS,"range":[0,xmax]},yaxis=AXIS)
     st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _metric_daily_history(frame, metric, cutoff, is_business_day):
+    if frame.empty:
+        return pd.Series(dtype=float)
+    d = frame[frame["_DATE"].dt.date <= cutoff].copy()
+    if d.empty:
+        return pd.Series(dtype=float)
+    grouped = d.groupby(d["_DATE"].dt.normalize()).agg(COMPLETAS=("_COMP", "sum"), TOTAL=("_COMP", "size"))
+    grouped["INCOMPLETAS"] = grouped["TOTAL"] - grouped["COMPLETAS"]
+    first = max(d["_DATE"].min().date(), cutoff - timedelta(days=120))
+    calendar_days = [dt for dt in pd.date_range(first, cutoff, freq="D") if is_business_day(dt.date())]
+    return grouped[METRIC_STYLES[metric]["column"]].reindex(calendar_days, fill_value=0).astype(float)
+
+
+def _probabilistic_forecast(history, actual, target, cutoff, month_end, is_business_day, seed=42):
+    remaining = [
+        dt for dt in pd.date_range(cutoff + timedelta(days=1), month_end, freq="D")
+        if is_business_day(dt.date())
+    ]
+    recent = history.tail(60)
+    if recent.empty or not remaining:
+        outcomes = np.full(2000, float(actual))
+    else:
+        baseline = float(recent.tail(30).mean())
+        momentum = float(recent.tail(10).mean()) / baseline if baseline > 0 else 1.0
+        momentum = float(np.clip(momentum, .70, 1.30))
+        rng = np.random.default_rng(seed)
+        future = np.zeros(2000)
+        for dt in remaining:
+            same_weekday = recent[recent.index.weekday == dt.weekday()]
+            pool = same_weekday if len(same_weekday) >= 2 else recent
+            future += rng.choice(pool.to_numpy(), size=len(future), replace=True) * momentum
+        outcomes = actual + future
+    p10, p50, p90 = np.percentile(outcomes, [10, 50, 90])
+    probability = float(np.mean(outcomes >= target) * 100) if target > 0 else np.nan
+    expected_daily = float(np.mean(outcomes - actual) / len(remaining)) if remaining else 0.0
+    required_daily = max(target - actual, 0) / len(remaining) if remaining else 0.0
+    if target <= 0:
+        goal_date = "Sin meta"
+    elif actual >= target:
+        goal_date = _pretty_date(cutoff)
+    elif expected_daily <= 0:
+        goal_date = "Fuera del mes"
+    else:
+        days_needed = int(np.ceil((target - actual) / expected_daily))
+        goal_date = _pretty_date(remaining[days_needed - 1]) if 0 < days_needed <= len(remaining) else "Fuera del mes"
+    return {
+        "p10": float(p10), "p50": float(p50), "p90": float(p90),
+        "probability": probability, "required_daily": float(required_daily),
+        "expected_daily": expected_daily, "goal_date": goal_date,
+        "remaining_days": len(remaining),
+    }
+
+
+def _forecast_actual(frame, metric):
+    complete = int(frame["_COMP"].sum())
+    total = int(len(frame))
+    return {"Completas": complete, "Incompletas": total - complete, "Total": total}[metric]
+
+
+def _forecast_risk_data(scope, metas, month, metric, cutoff, month_end, is_business_day, meta_agents):
+    month_scope = scope[scope["_MONTH"] == month]
+    supervisors = sorted(x for x in month_scope["_SUP"].unique() if x != "Sin asignar")
+    targets = _meta_by_supervisor(
+        metas, supervisors, [month], date(cutoff.year, cutoff.month, 1), month_end,
+        "Meta mensual", is_business_day, meta_agents, metric,
+    ).groupby("_SUP")["META"].sum()
+    rows = []
+    for pos, supervisor in enumerate(supervisors):
+        sup_scope = scope[scope["_SUP"] == supervisor]
+        actual = _forecast_actual(month_scope[month_scope["_SUP"] == supervisor], metric)
+        target = float(targets.get(supervisor, 0))
+        history = _metric_daily_history(sup_scope, metric, cutoff, is_business_day)
+        stats = _probabilistic_forecast(history, actual, target, cutoff, month_end, is_business_day, 100 + pos)
+        probability = stats["probability"]
+        risk = "Sin meta" if pd.isna(probability) else ("Bajo" if probability >= 75 else "Medio" if probability >= 40 else "Alto")
+        rows.append({"Supervisor": supervisor, "Actual": actual, "Meta": target, "P50": stats["p50"], "Probabilidad": probability, "Riesgo": risk})
+    return pd.DataFrame(rows)
+
+
+def _render_predictive(base,metas,start,end,is_business_day,meta_agents=None):
+    _panel_title("◎","Proyeccion probabilistica de cierre","Simulacion por ritmo reciente y patron de dias habiles.","PREDICTIVO")
+    months=_available_months(base); c1,c2,c3,c4=st.columns(4)
+    with c1: month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="ins_v4_pf_month") if months else None
+    with c2: metric=st.selectbox("Tipo de inscripcion",list(METRIC_STYLES),key="ins_v4_pf_metric")
+    with c3: level=st.selectbox("Nivel",["General","Coordinador","Supervisor"],key="ins_v4_pf_level")
+    if not month:return
+    month_base=base[base["_MONTH"]==month]
+    options=["General"] if level=="General" else sorted(x for x in month_base["_COORD" if level=="Coordinador" else "_SUP"].unique() if x!="Sin asignar")
+    with c4: entity=st.selectbox(level,options,key="ins_v4_pf_entity")
+    scope=base
+    if level!="General": scope=scope[scope["_COORD" if level=="Coordinador" else "_SUP"]==entity]
+    d=scope[scope["_MONTH"]==month]
+    if d.empty:st.info("Sin datos para proyectar.");return
+    cutoff=month_base["_DATE"].max().date(); mn=cutoff.month; year=cutoff.year; month_end=date(year,mn,calendar.monthrange(year,mn)[1])
+    actual=_forecast_actual(d,metric)
+    sups=sorted(d["_SUP"].unique()); target=float(_meta_by_supervisor(metas,sups,[month],date(year,mn,1),month_end,"Meta mensual",is_business_day,meta_agents,metric).META.sum())
+    history=_metric_daily_history(scope,metric,cutoff,is_business_day)
+    stats=_probabilistic_forecast(history,actual,target,cutoff,month_end,is_business_day)
+    projection=stats["p50"]; gap=projection-target; probability=stats["probability"]
+    probability_text="—" if pd.isna(probability) else _percent_es(probability)
+    interval=f"{_number_es(stats['p10'])} – {_number_es(stats['p90'])}"
+    st.markdown(
+        f"<div class='ebi-forecast ebi-forecast-predictive'>"
+        f"<span>META · {metric.upper()}<b>{_number_es(target)}</b><small>{stats['remaining_days']} dias habiles restantes</small></span>"
+        f"<span>ACTUAL · {metric.upper()}<b>{_number_es(actual)}</b><small>Corte: {_pretty_date(cutoff)}</small></span>"
+        f"<span>PROYECCION P50<b>{_number_es(projection)}</b><small>Escenario central</small></span>"
+        f"<span>RANGO PROBABLE 80 %<b>{interval}</b><small>Percentiles P10–P90</small></span>"
+        f"<span>PROBABILIDAD DE META<b style='color:{GREEN if not pd.isna(probability) and probability>=75 else AMBER if not pd.isna(probability) and probability>=40 else RED}'>{probability_text}</b><small>2.000 escenarios</small></span>"
+        f"<span>RITMO REQUERIDO<b>{stats['required_daily']:.1f}/dia</b><small>Fecha estimada: {stats['goal_date']}</small></span></div>",
+        unsafe_allow_html=True,
+    )
+    xmax=max(target,stats["p90"],actual,1)*1.12
+    fig=go.Figure()
+    fig.add_scatter(x=[stats["p10"],stats["p90"]],y=[entity,entity],mode="lines",line=dict(color="rgba(56,189,248,.26)",width=18),name="Rango probable 80 %",hovertemplate="Rango P10–P90: %{x:,.0f}<extra></extra>")
+    fig.add_bar(y=[entity],x=[actual],orientation="h",marker_color=GREEN,width=.25,name="Actual",hovertemplate="Actual: %{x:,.0f}<extra></extra>")
+    fig.add_scatter(x=[projection],y=[entity],mode="markers",marker=dict(symbol="diamond",size=15,color=BLUE),name="Proyeccion P50",hovertemplate="Proyeccion mediana: %{x:,.0f}<extra></extra>")
+    fig.add_scatter(x=[target],y=[entity],mode="markers",marker=dict(symbol="line-ns-open",size=29,color="white",line=dict(width=3)),name="Meta",hovertemplate="Meta: %{x:,.0f}<extra></extra>")
+    fig.add_shape(type="line",x0=actual,x1=projection,y0=0,y1=0,line=dict(color=BLUE,width=3,dash="dot"))
+    fig.update_layout(**_layout(240),xaxis={**AXIS,"range":[0,xmax]},yaxis=AXIS)
+    st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+    risk=_forecast_risk_data(scope,metas,month,metric,cutoff,month_end,is_business_day,meta_agents)
+    if not risk.empty:
+        _panel_title("⚠", "Riesgo predictivo por Supervisor", "Probabilidad estimada de alcanzar la meta mensual.", "PRIORIZACION")
+        risk=risk.sort_values(["Probabilidad","P50"],ascending=[False,False],na_position="first")
+        colors={"Alto":RED,"Medio":AMBER,"Bajo":GREEN,"Sin meta":MUTED}
+        fig=go.Figure(go.Bar(
+            x=risk["Probabilidad"].fillna(0),y=risk["Supervisor"],orientation="h",
+            marker_color=[colors[x] for x in risk["Riesgo"]],
+            text=["Sin meta" if pd.isna(p) else f"{p:.0f}%" for p in risk["Probabilidad"]],textposition="outside",cliponaxis=False,
+            customdata=risk[["Actual","Meta","P50","Riesgo"]],
+            hovertemplate="<b>%{y}</b><br>Probabilidad de meta: %{x:.1f}%<br>Actual: %{customdata[0]:,.0f}<br>Meta: %{customdata[1]:,.0f}<br>Proyeccion P50: %{customdata[2]:,.0f}<br>Riesgo: %{customdata[3]}<extra></extra>",
+        ))
+        fig.add_vrect(x0=0,x1=40,fillcolor="rgba(244,63,94,.035)",line_width=0,layer="below")
+        fig.add_vrect(x0=40,x1=75,fillcolor="rgba(245,158,11,.035)",line_width=0,layer="below")
+        fig.add_vrect(x0=75,x1=100,fillcolor="rgba(16,185,129,.035)",line_width=0,layer="below")
+        fig.update_layout(**_layout(max(300,len(risk)*35+90)),xaxis={**AXIS,"range":[0,108],"title":"Probabilidad de cumplir (%)"},yaxis=AXIS,showlegend=False)
+        st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+
+def _number_es(value: float) -> str:
+    return f"{value:,.0f}".replace(",", ".")
+
+
+def _percent_es(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " %"
+
+
+def _render_overview_kpis(base, metas, start, end, is_business_day, meta_agents=None):
+    """Resumen ejecutivo del mismo universo delimitado por los filtros globales."""
+    total = int(len(base))
+    complete = int(base["_COMP"].sum())
+    incomplete = total - complete
+    complete_rate = complete / total * 100 if total else 0.0
+    incomplete_rate = incomplete / total * 100 if total else 0.0
+
+    supervisors = sorted(x for x in base["_SUP"].unique() if x != "Sin asignar")
+    months = _available_months(base)
+    cutoff = min(end, date.today())
+    meta = _meta_by_supervisor(
+        metas, supervisors, months, start, cutoff,
+        "Meta acumulada al corte", is_business_day, meta_agents,
+    )
+    target = float(meta["META"].sum()) if "META" in meta else 0.0
+    compliance = complete / target * 100 if target > 0 else np.nan
+    gap = complete - target
+
+    if pd.isna(compliance):
+        compliance_value, compliance_detail, compliance_color = "—", "Sin meta disponible", MUTED
+        progress = 0.0
+    elif compliance >= 100:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "Meta alcanzada", GREEN
+        progress = 100.0
+    elif compliance >= 90:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "En rango de cumplimiento", AMBER
+        progress = compliance
+    else:
+        compliance_value, compliance_detail, compliance_color = _percent_es(compliance), "Bajo la meta", RED
+        progress = compliance
+
+    if target <= 0:
+        gap_value, gap_detail, gap_color = "—", "Sin meta para comparar", MUTED
+    elif gap > 0:
+        gap_value, gap_detail, gap_color = f"+{_number_es(gap)}", f"Superavit de {_number_es(gap)}", GREEN
+    elif gap < 0:
+        gap_value, gap_detail, gap_color = f"−{_number_es(abs(gap))}", f"Faltan {_number_es(abs(gap))}", RED
+    else:
+        gap_value, gap_detail, gap_color = "0", "Meta alcanzada", GREEN
+
+    cards = [
+        ("◎", "Total inscripciones", _number_es(total), "Registros del periodo", BLUE, ""),
+        ("✓", "Completas", _number_es(complete), f"{_percent_es(complete_rate)} del total", GREEN, ""),
+        ("!", "Incompletas", _number_es(incomplete), f"{_percent_es(incomplete_rate)} del total", AMBER, ""),
+        ("◇", "Meta al corte", _number_es(target), f"Corte: {_pretty_date(cutoff)}", INDIGO, ""),
+        ("↗", "Cumplimiento", compliance_value, compliance_detail, compliance_color,
+         f"<div class='ebi-overview-track'><i style='width:{min(max(progress, 0), 100):.1f}%'></i></div>"),
+        ("±", "Brecha vs meta", gap_value, gap_detail, gap_color, ""),
+    ]
+    html_cards = "".join(
+        f"<article class='ebi-overview-card' style='--accent:{color}'>"
+        f"<div class='ebi-overview-head'><span>{icon}</span><b>{label}</b></div>"
+        f"<strong>{value}</strong><small>{detail}</small>{extra}</article>"
+        for icon, label, value, detail, color, extra in cards
+    )
+    st.markdown(f"<div class='ebi-overview'>{html_cards}</div>", unsafe_allow_html=True)
 
 
 def _css():
     st.markdown("""
     <style>
-    .ebi-top{margin:0 0 14px;padding:18px 22px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:linear-gradient(120deg,rgba(14,165,233,.10),rgba(16,185,129,.06));display:flex;align-items:center;justify-content:space-between}
-    .ebi-top h1{font-family:'Space Grotesk',sans-serif!important;font-size:25px!important;color:white;margin:0!important}.ebi-top p{font-size:11px;color:rgba(255,255,255,.48);margin:4px 0 0}
+    .ebi-top{position:relative;overflow:hidden;margin:0 0 10px;padding:19px 22px;border:1px solid rgba(56,189,248,.16);border-radius:16px;background:linear-gradient(110deg,rgba(56,189,248,.075),rgba(16,185,129,.035) 55%,rgba(129,140,248,.045));display:flex;align-items:center;justify-content:space-between;gap:24px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
+    .ebi-top::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#38BDF8,#34D399)}.ebi-top::after{content:'';position:absolute;width:260px;height:160px;right:-90px;top:-105px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.11),transparent 70%);pointer-events:none}.ebi-top-copy{position:relative;z-index:1;min-width:0}.ebi-top-context{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:8px;font-weight:850;letter-spacing:.18em;color:#7DD3FC}.ebi-top-context i{display:block;width:18px;height:1px;background:#38BDF8}.ebi-top h1{font-family:'Space Grotesk',sans-serif!important;font-size:26px!important;line-height:1.08!important;color:white;margin:0!important}.ebi-top p{font-size:10px;color:rgba(255,255,255,.43);margin:6px 0 0}.ebi-period{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto;padding-left:22px;border-left:1px solid rgba(255,255,255,.09)}.ebi-period span{font-size:7px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.35)}.ebi-period b{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.04em;color:#7DD3FC;white-space:nowrap}
+    div.st-key-ins_module_nav{margin:0 0 8px;padding:5px;border:1px solid rgba(255,255,255,.085);border-radius:13px;background:rgba(2,17,13,.55);box-shadow:0 8px 30px -26px rgba(0,0,0,.9)}div.st-key-ins_module_nav div[data-testid='stHorizontalBlock']{gap:5px}div.st-key-ins_module_nav button{min-height:39px!important;border:1px solid transparent!important;border-radius:9px!important;background:transparent!important;color:rgba(255,255,255,.62)!important;box-shadow:none!important;font-size:11px!important;font-weight:650!important;transition:background .16s,color .16s,border-color .16s!important}div.st-key-ins_module_nav button:hover{color:white!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.075)!important}div.st-key-ins_module_nav button[kind='primary']{color:#7DD3FC!important;background:linear-gradient(135deg,rgba(56,189,248,.14),rgba(16,185,129,.08))!important;border-color:rgba(56,189,248,.22)!important;box-shadow:inset 0 -2px 0 #38BDF8!important}
+    .ebi-overview{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:14px 0 6px}.ebi-overview-card{position:relative;overflow:hidden;min-width:0;padding:13px 13px 12px;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,rgba(255,255,255,.035)),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}.ebi-overview-card::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent)}.ebi-overview-head{display:flex;align-items:center;gap:7px;min-width:0}.ebi-overview-head span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 22px;border-radius:7px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:11px;font-weight:900}.ebi-overview-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.56);font-size:8px;letter-spacing:.075em;text-transform:uppercase}.ebi-overview-card>strong{display:block;margin:10px 0 2px;font-family:'Space Grotesk',sans-serif;font-size:22px;line-height:1;color:#fff}.ebi-overview-card>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.40);font-size:8px}.ebi-overview-track{height:3px;margin-top:9px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.ebi-overview-track i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
     .ebi-section{display:flex;align-items:center;gap:10px;margin:22px 0 9px}.ebi-section span{font-size:9px;font-weight:800;letter-spacing:.16em;color:#38BDF8}.ebi-section b{font-family:'Space Grotesk',sans-serif;font-size:15px;color:white}.ebi-section i{height:1px;flex:1;background:linear-gradient(90deg,rgba(255,255,255,.14),transparent)}
     .ebi-head{display:flex;align-items:center;gap:11px;margin:10px 0 5px;padding:10px 12px;border-left:2px solid #38BDF8;background:linear-gradient(90deg,rgba(56,189,248,.07),transparent);border-radius:0 12px 12px 0}.ebi-icon{width:31px;height:31px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:rgba(255,255,255,.07)}.ebi-copy{flex:1}.ebi-title{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:#fff}.ebi-sub{font-size:10px;color:rgba(255,255,255,.43);margin-top:2px}.ebi-tag{font-size:8px;font-weight:800;letter-spacing:.10em;color:#7DD3FC;border:1px solid rgba(56,189,248,.24);border-radius:99px;padding:4px 8px}
-    .ebi-kpis,.ebi-forecast{display:flex;gap:10px;margin:8px 0}.ebi-kpis span,.ebi-forecast span{flex:1;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;font-size:9px;letter-spacing:.08em;color:rgba(255,255,255,.45)}.ebi-kpis b,.ebi-forecast b{font-family:'Space Grotesk',sans-serif;font-size:17px;margin-right:7px;color:white}.ebi-forecast span{display:flex;flex-direction:column;gap:4px}.ebi-forecast b{font-size:22px;margin:0}
+    .ebi-kpis,.ebi-forecast{display:flex;gap:10px;margin:8px 0}.ebi-kpis span,.ebi-forecast span{flex:1;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;font-size:9px;letter-spacing:.08em;color:rgba(255,255,255,.45)}.ebi-kpis b,.ebi-forecast b{font-family:'Space Grotesk',sans-serif;font-size:17px;margin-right:7px;color:white}.ebi-forecast span{display:flex;flex-direction:column;gap:4px}.ebi-forecast b{font-size:22px;margin:0}.ebi-forecast small{font-size:8px;letter-spacing:0;color:rgba(255,255,255,.35)}.ebi-forecast-predictive{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}.ebi-forecast-predictive span{min-width:0}.ebi-forecast-predictive b{font-size:18px;white-space:nowrap}
     .ebi-selected{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 7px}.ebi-selected span{font-size:9px;color:rgba(255,255,255,.58);padding:3px 7px;border:1px solid rgba(255,255,255,.08);border-radius:99px;background:rgba(255,255,255,.025)}.ebi-selected span::first-letter{color:var(--dot)}
     .ebi-inc-scroll{max-height:560px;overflow-y:auto;padding:2px 6px 2px 1px;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.35) transparent}.ebi-incident{position:relative;display:flex;gap:10px;margin:0 0 9px;padding:13px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--incident);box-shadow:0 8px 22px -18px rgba(0,0,0,.9)}.ebi-incident.warning{--incident:#F59E0B}.ebi-incident.critical{--incident:#F43F5E}.ebi-inc-dot{color:var(--incident);font-size:10px;padding-top:3px}.ebi-inc-body{min-width:0;flex:1}.ebi-inc-name{font-size:12px;font-weight:750;color:rgba(255,255,255,.94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ebi-inc-sup{font-size:9px;color:rgba(255,255,255,.40);margin:2px 0 9px}.ebi-inc-main{display:flex;flex-direction:column;gap:2px}.ebi-inc-main strong{font-family:'Space Grotesk',sans-serif;font-size:13px;color:white}.ebi-inc-main span{font-size:9px;color:rgba(255,255,255,.52)}.ebi-inc-foot{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);font-size:8px;color:rgba(255,255,255,.38)}.ebi-inc-foot b{color:rgba(255,255,255,.70)}.ebi-inc-badge{align-self:flex-start;font-size:7px;font-weight:850;letter-spacing:.08em;color:var(--incident);background:color-mix(in srgb,var(--incident) 10%,transparent);border:1px solid color-mix(in srgb,var(--incident) 28%,transparent);border-radius:99px;padding:3px 6px;white-space:nowrap}
-    @media(max-width:1100px){.ebi-inc-scroll{max-height:500px}.ebi-forecast{flex-wrap:wrap}.ebi-forecast span{min-width:42%}}
+    @media(max-width:1100px){.ebi-overview,.ebi-forecast-predictive{grid-template-columns:repeat(3,minmax(0,1fr))}.ebi-inc-scroll{max-height:500px}.ebi-forecast:not(.ebi-forecast-predictive){flex-wrap:wrap}.ebi-forecast:not(.ebi-forecast-predictive) span{min-width:42%}}
+    @media(max-width:720px){.ebi-top{align-items:flex-start;flex-direction:column;gap:13px}.ebi-period{align-items:flex-start;padding:0;border-left:0}.ebi-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
     div[data-testid='stVerticalBlockBorderWrapper']{border-color:rgba(255,255,255,.08)!important;background:rgba(255,255,255,.018)!important;border-radius:16px!important}
     </style>
     """,unsafe_allow_html=True)
@@ -969,25 +1257,35 @@ def _css():
 
 def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table, is_business_day, global_supervisor="Todos", global_agent="Todos"):
     _css(); d=_prepare(base)
-    st.markdown(f"<div class='ebi-top'><div><h1>Inscripciones · Centro de Operaciones</h1><p>Monitoreo ejecutivo de produccion, capacidad, riesgo y cierre proyectado</p></div><span class='ebi-tag'>{fecha_ini:%d/%m/%Y} — {fecha_fin:%d/%m/%Y}</span></div>",unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='ebi-top'><div class='ebi-top-copy'>"
+        f"<div class='ebi-top-context'><i></i>INSCRIPCIONES</div>"
+        f"<h1>Centro de Operaciones</h1>"
+        f"<p>Produccion, capacidad, riesgo y cierre proyectado</p></div>"
+        f"<div class='ebi-period'><span>PERIODO ANALIZADO</span>"
+        f"<b>{_pretty_date(fecha_ini)} — {_pretty_date(fecha_fin)}</b></div></div>",
+        unsafe_allow_html=True,
+    )
     root=Path(__file__).resolve().parent.parent
     home_pg=st.Page(str(root/"home.py"),title="Inicio",icon="🏠",default=True)
     mat_pg=st.Page(str(root/"pages/2_Matriculas.py"),title="Matriculas",icon="🎓")
     quart_pg=st.Page(str(root/"pages/3_Cuartiles.py"),title="Cuartiles",icon="🏆")
     rt_pg=st.Page(str(root/"pages/4_Contactabilidad.py"),title="Real time",icon="📞")
-    n1,n2,n3,n4,n5=st.columns(5)
-    with n1:
-        if st.button("🏠 Inicio",key="ins_v2_nav_home",width="stretch"): st.switch_page(home_pg)
-    with n2: st.button("📝 Inscripciones",key="ins_v2_nav_ins",width="stretch",type="primary")
-    with n3:
-        if st.button("🎓 Matriculas",key="ins_v2_nav_mat",width="stretch"): st.switch_page(mat_pg)
-    with n4:
-        if st.button("🏆 Cuartiles",key="ins_v2_nav_q",width="stretch"): st.switch_page(quart_pg)
-    with n5:
-        if st.button("📞 Real time",key="ins_v2_nav_rt",width="stretch"): st.switch_page(rt_pg)
+    with st.container(key="ins_module_nav"):
+        n1,n2,n3,n4,n5=st.columns(5)
+        with n1:
+            if st.button("⌂  Inicio",key="ins_v2_nav_home",width="stretch"): st.switch_page(home_pg)
+        with n2: st.button("▤  Inscripciones",key="ins_v2_nav_ins",width="stretch",type="primary")
+        with n3:
+            if st.button("◆  Matriculas",key="ins_v2_nav_mat",width="stretch"): st.switch_page(mat_pg)
+        with n4:
+            if st.button("◇  Cuartiles",key="ins_v2_nav_q",width="stretch"): st.switch_page(quart_pg)
+        with n5:
+            if st.button("●  Real time",key="ins_v2_nav_rt",width="stretch"): st.switch_page(rt_pg)
     if d.empty:
         st.warning("No hay inscripciones dentro de los filtros globales seleccionados."); return
     meta_agents=[global_agent] if global_agent!="Todos" else None
+    _render_overview_kpis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     _section("A", "MONITOREO")
     with st.container(border=True): _render_supervisor(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_coordinator(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
@@ -1004,6 +1302,7 @@ def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table
     _section("E", "ANALISIS")
     with st.container(border=True): _render_analysis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_projection(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    with st.container(border=True): _render_predictive(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
 
 # ─────────────────────────────────────────────
 # LOGO
