@@ -784,20 +784,25 @@ def _render_matrix_alerts(base, supervisor, month, is_business_day):
 
 
 def _render_matrices(base,roster,is_business_day,global_supervisor):
-    """`roster` es el universo COMPLETO de supervisores/asesores (sin recorte de fecha
-    ni de mes) — de ahí sale quién aparece en la matriz, para que un asesor con cero
-    matriculas en el mes elegido siga la fila en vez de desaparecer. `base` (ya
-    filtrada por fecha/mes) sigue siendo la fuente de los valores dia a dia."""
+    """`roster` es el universo COMPLETO de supervisores/asesores ACTIVOS (sin
+    recorte de fecha ni de mes, pero excluyendo a quien quedó marcado como
+    retirado — ver `_nombres_inactivos` en _datos.py) — de ahí sale quién aparece
+    en la matriz, para que un asesor activo con cero matriculas en el mes elegido
+    siga la fila en vez de desaparecer, sin resucitar a quien ya no está.
+    `base` (ya filtrada por fecha/mes) sigue siendo la fuente de los valores
+    dia a dia."""
+    roster_sup=roster[roster["_SUPERVISOR_ACTIVO"]] if "_SUPERVISOR_ACTIVO" in roster else roster
+    roster_agent=roster[roster["_ASESOR_ACTIVO"]] if "_ASESOR_ACTIVO" in roster else roster
     months=_available_months(base)
     _panel_title("▦","Matriz diaria por Supervisor","Produccion por dia; gris es no laborable y vacio es futuro.","HEATMAP")
     month=st.selectbox("Mes",months,index=max(len(months)-1,0),key="mat_v2_ms_month") if months else None
     if month:
         cutoff=base.loc[base["_MONTH"]==month,"_DATE"].max().date()
-        rows=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar")
+        rows=sorted(x for x in roster_sup["_SUP"].unique() if x!="Sin asignar")
         selected=_heatmap(base,"_SUP",rows,month,is_business_day,"mat_v2_ms_heat",cutoff)
         if selected: _cell_detail(base,"_SUP",selected[0],month,selected[1])
     _panel_title("👤","Matriz diaria por Asesor","Se construye solo para un supervisor, protegiendo el rendimiento de la pagina.","SEGUIMIENTO")
-    supervisors=sorted(x for x in roster["_SUP"].unique() if x!="Sin asignar")
+    supervisors=sorted(x for x in roster_sup["_SUP"].unique() if x!="Sin asignar")
     default=supervisors.index(global_supervisor)+1 if global_supervisor in supervisors else 0
     supervisor=st.selectbox("Supervisor",["Todos"]+supervisors,index=default,key="mat_v2_ma_sup")
     if supervisor=="Todos":
@@ -805,7 +810,7 @@ def _render_matrices(base,roster,is_business_day,global_supervisor):
     else:
         month_a=st.selectbox("Mes de asesores",months,index=max(len(months)-1,0),key="mat_v2_ma_month")
         cutoff_a=base.loc[base["_MONTH"]==month_a,"_DATE"].max().date()
-        rows=sorted(x for x in roster.loc[roster["_SUP"]==supervisor,"_AGENT"].unique() if x!="Sin asignar")
+        rows=sorted(x for x in roster_agent.loc[roster_agent["_SUP"]==supervisor,"_AGENT"].unique() if x!="Sin asignar")
         selected=_heatmap(base[base["_SUP"]==supervisor],"_AGENT",rows,month_a,is_business_day,"mat_v2_ma_heat",cutoff_a)
         if selected: _cell_detail(base,"_AGENT",selected[0],month_a,selected[1])
         _render_matrix_alerts(base, supervisor, month_a, is_business_day)

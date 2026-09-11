@@ -154,6 +154,17 @@ def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
     return serie.map(lambda v: canonico.get(v, v))
 
 
+def _nombres_inactivos(serie_cruda: pd.Series, serie_canonica: pd.Series) -> set[str]:
+    """Nombres canónicos (post `_canonicalizar_nombres`) para los que ALGUNA fila
+    cruda llevó un marcador de estado como "Retiro" (`_MARCADORES_NOMBRE`). Se
+    asume que, una vez marcada como retirada, la persona ya no está activa —
+    aunque tenga filas limpias más antiguas de cuando sí lo estaba. Pensado para
+    excluir del "roster" (quién debe aparecer en una matriz/selector) sin tocar
+    su producción histórica, que sigue contando en el resto del dashboard."""
+    tiene_marcador = serie_cruda.map(lambda v: bool(frozenset(_norm(v).split()) & _MARCADORES_NOMBRE))
+    return set(serie_canonica[tiene_marcador].unique())
+
+
 def norm_cohorte(valor) -> str:
     """'Sep-26' / 'jul-26' / 'Julio-2026' → 'Septiembre-2026' / 'Julio-2026'."""
     s = str(valor).strip()
@@ -444,10 +455,20 @@ def matriculas() -> pd.DataFrame:
     # Las hojas de meses distintos no escriben el nombre de asesor/supervisor/
     # coordinador siempre igual (mayúsculas, tildes, apellido faltante, o con un
     # marcador de estado como "Retiro" antepuesto) — se consolidan variantes aquí
-    # en vez de en la fuente. Ver `_canonicalizar_nombres`.
-    df["_ASESOR"] = _canonicalizar_nombres(df["_ASESOR"])
-    df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
-    df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
+    # en vez de en la fuente. Ver `_canonicalizar_nombres`. El marcador también
+    # indica quién ya no está activo (`_nombres_inactivos`) ANTES de perderse al
+    # fusionar — así un roster puede excluir a quien se retiró sin descartar su
+    # producción histórica del resto del dashboard.
+    _asesor_canon = _canonicalizar_nombres(df["_ASESOR"])
+    _sup_canon = _canonicalizar_nombres(df["_SUPERVISOR"])
+    _coord_canon = _canonicalizar_nombres(df["_COORDINADOR"])
+    _asesores_inactivos = _nombres_inactivos(df["_ASESOR"], _asesor_canon)
+    _sups_inactivos = _nombres_inactivos(df["_SUPERVISOR"], _sup_canon)
+    _coords_inactivos = _nombres_inactivos(df["_COORDINADOR"], _coord_canon)
+    df["_ASESOR"], df["_SUPERVISOR"], df["_COORDINADOR"] = _asesor_canon, _sup_canon, _coord_canon
+    df["_ASESOR_ACTIVO"] = ~df["_ASESOR"].isin(_asesores_inactivos)
+    df["_SUPERVISOR_ACTIVO"] = ~df["_SUPERVISOR"].isin(_sups_inactivos)
+    df["_COORDINADOR_ACTIVO"] = ~df["_COORDINADOR"].isin(_coords_inactivos)
 
     df["_DOC_ASESOR"] = rec.map(lambda r: r["documento"] if isinstance(r, dict) else "").fillna("")
     df["_CC"] = pd.to_numeric(df["_DOC_ASESOR"], errors="coerce").astype("Int64")
