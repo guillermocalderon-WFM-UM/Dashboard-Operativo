@@ -664,7 +664,7 @@ def _heatmap(base, row_col, rows, month, is_business_day, key, observed_through=
     year=int(d["_YEAR"].mode().iat[0]); last_data=observed_through or d["_DATE"].max().date(); days=calendar.monthrange(year,MONTHS.index(month)+1)[1]
     grouped=d.groupby([row_col,"_DAY"]).size()
     pv=grouped.unstack(fill_value=0).reindex(index=rows,columns=range(1,days+1),fill_value=0)
-    z=pv.astype(float).values; text=pv.astype(str).values.astype(object)
+    z=pv.astype(float).values.copy(); text=pv.astype(str).values.astype(object)
     custom=np.empty((len(rows),days,2),dtype=object)
     hover=np.empty((len(rows),days),dtype=object)
     for i in range(len(rows)):

@@ -809,7 +809,7 @@ def _heatmap(base, row_col, rows, month, metric, is_business_day, key, observed_
     grouped["INCOMPLETAS"]=grouped["TOTAL"]-grouped["COMPLETAS"]
     pivots={name:grouped[name].unstack(fill_value=0).reindex(index=rows,columns=range(1,days+1),fill_value=0) for name in ["COMPLETAS","INCOMPLETAS","TOTAL"]}
     metric_col={"Completas":"COMPLETAS","Incompletas":"INCOMPLETAS","Todas":"TOTAL"}[metric]
-    pv=pivots[metric_col]; z=pv.astype(float).values; text=pv.astype(str).values.astype(object)
+    pv=pivots[metric_col]; z=pv.astype(float).values.copy(); text=pv.astype(str).values.astype(object)
     custom=np.empty((len(rows),days,6),dtype=object)
     hover=np.empty((len(rows),days),dtype=object)
     for i in range(len(rows)):

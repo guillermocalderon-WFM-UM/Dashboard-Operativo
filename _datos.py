@@ -111,21 +111,36 @@ def _valido(s) -> bool:
     return _norm(s) not in _VACIO
 
 
+
+# Palabras que marcan estado (no son parte del nombre) y a veces se anteponen al
+# nombre en la fuente — p. ej. "Retiro Pablo Velandia" para un asesor que ya no
+# está activo. Al comparar se ignoran, y una forma canónica nunca se elige CON
+# marcador si existe una variante limpia del mismo nombre.
+_MARCADORES_NOMBRE = {"retiro", "retirado", "retirada", "inactivo", "inactiva"}
+
+
 def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
     """Fusiona variantes del mismo nombre que llegan distintas entre hojas mensuales
-    (mayúsculas/tildes distintas, o un apellido de menos) SIN tocar la fuente: agrupa
-    por el conjunto de palabras normalizado (`_norm`) y, cuando el de un valor es
-    subconjunto del de otro (p. ej. 'Tatiana Martinez' ⊂ 'Tatiana Martinez Quintero'),
-    se queda con la variante más completa como forma canónica. A igualdad de palabras
-    (solo difieren en mayúsculas/tildes) también fusiona, quedándose con la más
-    frecuente. No toca nombres de una sola palabra (demasiado riesgo de fusionar
-    personas distintas) ni 'Sin asignar'/vacíos."""
+    (mayúsculas/tildes distintas, un apellido de menos, o con un marcador de estado
+    como 'Retiro' antepuesto) SIN tocar la fuente: agrupa por el conjunto de palabras
+    normalizado (`_norm`, sin los marcadores de `_MARCADORES_NOMBRE`) y, cuando el de
+    un valor es subconjunto del de otro (p. ej. 'Tatiana Martinez' ⊂ 'Tatiana Martinez
+    Quintero'), se queda con la variante más completa como forma canónica — salvo que
+    esa variante lleve un marcador de estado, en cuyo caso se prefiere la limpia. A
+    igualdad de palabras (solo difieren en mayúsculas/tildes) también fusiona,
+    quedándose con la más frecuente. No toca nombres de una sola palabra (demasiado
+    riesgo de fusionar personas distintas) ni 'Sin asignar'/vacíos."""
     frecuencia = serie.value_counts()
     valores = [v for v in frecuencia.index if v and v != "Sin asignar"]
-    tokens = {v: frozenset(_norm(v).split()) for v in valores}
-    # Más palabras primero; a igual número de palabras, la variante más frecuente
-    # queda como ancla (cubre el caso de mayúsculas/tildes distintas).
-    orden = sorted((v for v in valores if len(tokens[v]) >= 2), key=lambda v: (-len(tokens[v]), -frecuencia[v]))
+    tokens_crudos = {v: frozenset(_norm(v).split()) for v in valores}
+    tokens = {v: (tokens_crudos[v] - _MARCADORES_NOMBRE) or tokens_crudos[v] for v in valores}
+    con_marcador = {v: bool(tokens_crudos[v] & _MARCADORES_NOMBRE) for v in valores}
+    # Más palabras (sin contar marcadores) primero; a igual número, primero la
+    # variante SIN marcador de estado; a igualdad de ambas, la más frecuente.
+    orden = sorted(
+        (v for v in valores if len(tokens[v]) >= 2),
+        key=lambda v: (-len(tokens[v]), con_marcador[v], -frecuencia[v]),
+    )
     canonico: dict[str, str] = {}
     anclas: list[tuple[frozenset, str]] = []
     for v in orden:
@@ -426,9 +441,11 @@ def matriculas() -> pd.DataFrame:
         _col_coord[_falta].map(_res_coord).replace("", pd.NA).fillna("Sin asignar")
     )
 
-    # Las hojas de meses distintos no escriben el nombre de supervisor/coordinador
-    # siempre igual (mayúsculas, tildes, apellido faltante) — se consolidan variantes
-    # aquí en vez de en la fuente. Ver `_canonicalizar_nombres`.
+    # Las hojas de meses distintos no escriben el nombre de asesor/supervisor/
+    # coordinador siempre igual (mayúsculas, tildes, apellido faltante, o con un
+    # marcador de estado como "Retiro" antepuesto) — se consolidan variantes aquí
+    # en vez de en la fuente. Ver `_canonicalizar_nombres`.
+    df["_ASESOR"] = _canonicalizar_nombres(df["_ASESOR"])
     df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
     df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
 
