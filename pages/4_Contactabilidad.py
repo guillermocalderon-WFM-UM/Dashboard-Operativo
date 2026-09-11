@@ -243,15 +243,9 @@ st.markdown(f"""
     .sbf-credit {{ display:flex;align-items:center;justify-content:center;gap:5px;margin-top:12px;font-size:9px!important;font-weight:600!important;color:rgba(255,255,255,0.30)!important;text-align:center;letter-spacing:0.06em; }}
     .sbf-spark {{ font-size:10px; }}
 
-    .st-key-hdrbanner {{ position:relative;overflow:hidden;
-        background:radial-gradient(ellipse 70% 130% at 2% -15%,rgba(14,165,233,0.34),transparent 60%),radial-gradient(ellipse 65% 130% at 100% 120%,rgba(129,140,248,0.34),transparent 60%),linear-gradient(155deg,#071811 0%,#0C2B1D 50%,#061109 100%);
-        border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px 30px;margin-bottom:10px; }}
-    .hb-eyebrow {{ display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);border-radius:99px;padding:5px 13px;margin-bottom:11px;font-size:10px;font-weight:700;color:rgba(255,255,255,0.78);letter-spacing:0.12em;text-transform:uppercase; }}
-    .hb-dot {{ width:7px;height:7px;border-radius:50%;background:#34D399;box-shadow:0 0 9px #34D399;animation:sbcPulse 1.8s ease-in-out infinite; }}
-    .hb-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:29px;font-weight:700;color:white;margin:0 0 9px;letter-spacing:-0.8px; }}
-    .hb-meta {{ display:flex;flex-wrap:wrap;gap:8px; }}
-    .hb-chip {{ display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.13);border-radius:9px;padding:5px 11px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.74); }}
-    .hb-chip b {{ color:#fff; }}
+    .ebi-top{{position:relative;overflow:hidden;margin:0 0 10px;padding:19px 22px;border:1px solid rgba(56,189,248,.16);border-radius:16px;background:linear-gradient(110deg,rgba(56,189,248,.075),rgba(16,185,129,.035) 55%,rgba(129,140,248,.045));display:flex;align-items:center;justify-content:space-between;gap:24px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}}
+    .ebi-top::before{{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#38BDF8,#34D399)}}.ebi-top::after{{content:'';position:absolute;width:260px;height:160px;right:-90px;top:-105px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.11),transparent 70%);pointer-events:none}}.ebi-top-copy{{position:relative;z-index:1;min-width:0}}.ebi-top-context{{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:8px;font-weight:850;letter-spacing:.18em;color:#7DD3FC}}.ebi-top-context i{{display:block;width:18px;height:1px;background:#38BDF8}}.ebi-top h1{{font-family:'Space Grotesk',sans-serif!important;font-size:26px!important;line-height:1.08!important;color:white;margin:0!important}}.ebi-top p{{font-size:10px;color:rgba(255,255,255,.43);margin:6px 0 0}}.ebi-period{{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto;padding-left:22px;border-left:1px solid rgba(255,255,255,.09)}}.ebi-period span{{font-size:7px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.35)}}.ebi-period b{{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.04em;color:#7DD3FC;white-space:nowrap}}
+    @media(max-width:720px){{.ebi-top{{align-items:flex-start;flex-direction:column;gap:13px}}.ebi-period{{align-items:flex-start;padding:0;border-left:0}}}}
     div.st-key-cont_module_nav{{margin:0 0 8px;padding:5px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03)}}div.st-key-cont_module_nav div[data-testid='stHorizontalBlock']{{gap:6px}}div.st-key-cont_module_nav button{{min-height:40px!important;border:1px solid transparent!important;border-radius:10px!important;background:transparent!important;color:rgba(255,255,255,.55)!important;box-shadow:none!important;font-size:11px!important;font-weight:650!important;transition:background .16s,color .16s,border-color .16s!important}}div.st-key-cont_module_nav button:hover{{color:white!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.08)!important}}div.st-key-cont_module_nav button[kind='primary']{{color:#7DD3FC!important;background:color-mix(in srgb,#38BDF8 14%,transparent)!important;border-color:color-mix(in srgb,#38BDF8 30%,transparent)!important;box-shadow:none!important}}
 
     .kpi-card {{ background:rgba(255,255,255,0.035);border-radius:16px;padding:18px 10px 15px;border:1px solid rgba(255,255,255,0.08);position:relative;text-align:center; }}
@@ -303,16 +297,15 @@ _insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝
 _mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
 _cuart_pg = st.Page("pages/3_Cuartiles.py", title="Cuartiles", icon="🏆")
 
-with st.container(key="hdrbanner"):
-    st.markdown(f"""
-    <div class='hb-eyebrow'><span class='hb-dot'></span>Centro de Control · Uniminuto 2026</div>
-    <div class='hb-title'>Real Time</div>
-    <div class='hb-meta'>
-        <span class='hb-chip'>📅 <b>{_fecha_txt}</b></span>
-        <span class='hb-chip'>🔄 Última llamada <b>{_actualiz.strftime('%H:%M') if pd.notna(_actualiz) else '—'}</b></span>
-        <span class='hb-chip'>{"🟢 En vivo" if _es_hoy else "🔒 Cerrado"}</span>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown(
+    f"<div class='ebi-top'><div class='ebi-top-copy'>"
+    f"<div class='ebi-top-context'><i></i>REAL TIME</div>"
+    f"<h1>Centro de Operaciones</h1>"
+    f"<p>Monitoreo de llamadas, contactabilidad y gestión de asesores en tiempo real</p></div>"
+    f"<div class='ebi-period'><span>ÚLTIMA LLAMADA</span>"
+    f"<b>{_actualiz.strftime('%H:%M') if pd.notna(_actualiz) else '—'}</b></div></div>",
+    unsafe_allow_html=True,
+)
 
 with st.container(key="cont_module_nav"):
     n1, n2, n3, n4, n5 = st.columns(5)
