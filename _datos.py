@@ -154,13 +154,13 @@ def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
     return serie.map(lambda v: canonico.get(v, v))
 
 
-def _tokens_activos_ultimo_mes(directorio_ultimo: pd.DataFrame | None) -> tuple[list, list, list]:
-    """Conjuntos de palabras (uno por persona) presentes en el directorio
-    (sociodemográfico) del ÚLTIMO mes disponible, para Agente/Supervisor/
-    Coordinador. Quien deja de salir en esa hoja es, por definición, un retiro
-    — no importa que tenga producción histórica de cuando sí estaba activo."""
+def _tokens_directorio(directorio: pd.DataFrame | None) -> tuple[list, list, list]:
+    """Conjuntos de palabras (uno por persona) presentes en UNA hoja de directorio
+    (sociodemográfico) de un mes dado, para Agente/Supervisor/Coordinador. Quien
+    no sale ahí no estaba activo ESE mes — sin importar que tenga producción de
+    otros meses en los que sí lo estuvo."""
     vacio: list = []
-    if directorio_ultimo is None or not {"Agente", "Supervisor", "Coordinador"}.issubset(directorio_ultimo.columns):
+    if directorio is None or not {"Agente", "Supervisor", "Coordinador"}.issubset(directorio.columns):
         return vacio, vacio, vacio
 
     def _tokens(columna: pd.Series) -> list[frozenset]:
@@ -175,31 +175,39 @@ def _tokens_activos_ultimo_mes(directorio_ultimo: pd.DataFrame | None) -> tuple[
         return out
 
     return (
-        _tokens(directorio_ultimo["Agente"]),
-        _tokens(directorio_ultimo["Supervisor"]),
-        _tokens(directorio_ultimo["Coordinador"]),
+        _tokens(directorio["Agente"]),
+        _tokens(directorio["Supervisor"]),
+        _tokens(directorio["Coordinador"]),
     )
 
 
-def _marcar_activos(serie: pd.Series, activos_tokens: list[frozenset]) -> pd.Series:
-    """True si `serie` (ya canonicalizada) coincide con alguien del directorio del
-    último mes: mismo conjunto de palabras, o uno subconjunto del otro (para que
-    'Pablo Velandia' case con 'Pablo Esteban Velandia Latorre'). Sin directorio
-    de referencia (hoja no disponible) no filtra — todos quedan activos."""
+def nombre_activo_en(valor: str, activos_tokens: list[frozenset]) -> bool:
+    """¿`valor` corresponde a alguien presente en `activos_tokens` (ver
+    `_tokens_directorio` / `roster_matriculas_por_mes`)? Compara por conjunto de
+    palabras, con match de subconjunto en cualquier sentido — así 'Pablo Velandia'
+    casa con 'Pablo Esteban Velandia Latorre' aunque no coincidan letra a letra.
+    Sin referencia (mes sin hoja de directorio disponible) no filtra: todos
+    quedan activos, para no ocultar filas por falta de datos."""
     if not activos_tokens:
-        return pd.Series(True, index=serie.index)
-    cache: dict[str, bool] = {}
+        return True
+    if not valor or valor == "Sin asignar":
+        return False
+    t = frozenset(_norm(valor).split())
+    return bool(t) and any(t <= at or at <= t for at in activos_tokens)
 
-    def _activo(v: str) -> bool:
-        if v not in cache:
-            if not v or v == "Sin asignar":
-                cache[v] = False
-            else:
-                t = frozenset(_norm(v).split())
-                cache[v] = bool(t) and any(t <= at or at <= t for at in activos_tokens)
-        return cache[v]
 
-    return serie.map(_activo)
+@st.cache_data(**_CACHE)
+def roster_matriculas_por_mes() -> dict[str, tuple[list, list, list]]:
+    """Para cada mes de `SHEETS_MATRICULAS_MES`, quién salía ese mes en el
+    directorio (sociodemográfico) — Agente/Supervisor/Coordinador, como conjuntos
+    de palabras (ver `_tokens_directorio`). Es la fuente de verdad de "quién
+    estaba activo" en un mes puntual, independiente de si tuvo matrículas ese
+    mes: a diferencia de `matriculas()` (solo transacciones), esta hoja lista a
+    TODO el equipo de ese mes, tenga o no producción."""
+    meses_ids = SHEETS_MATRICULAS_MES
+    specs = [(sid, mes, {"dtype": str}) for mes, sid in meses_ids.items()]
+    dirs = _leer_paralelo(specs)
+    return {mes: _tokens_directorio(d) for mes, d in zip(meses_ids.keys(), dirs)}
 
 
 def norm_cohorte(valor) -> str:
@@ -496,15 +504,9 @@ def matriculas() -> pd.DataFrame:
     df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
     df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
 
-    # "Activo" = sigue apareciendo en el directorio (sociodemográfico) del ÚLTIMO
-    # mes disponible — quien deja de salir ahí es un retiro, sin importar que tenga
-    # producción histórica (que se conserva; solo se excluye del roster de "quién
-    # debe aparecer" en las matrices). `dirs` ya viene ordenado cronológicamente.
-    _dir_ultimo = next((d for d in reversed(dirs) if d is not None), None)
-    _activos_asesor, _activos_sup, _activos_coord = _tokens_activos_ultimo_mes(_dir_ultimo)
-    df["_ASESOR_ACTIVO"] = _marcar_activos(df["_ASESOR"], _activos_asesor)
-    df["_SUPERVISOR_ACTIVO"] = _marcar_activos(df["_SUPERVISOR"], _activos_sup)
-    df["_COORDINADOR_ACTIVO"] = _marcar_activos(df["_COORDINADOR"], _activos_coord)
+    # "Quién estaba activo" se resuelve por MES contra el directorio de ese mes
+    # (ver `roster_matriculas_por_mes`), no aquí: alguien activo en enero pero no
+    # en septiembre debe seguir saliendo en la matriz de enero.
 
     df["_DOC_ASESOR"] = rec.map(lambda r: r["documento"] if isinstance(r, dict) else "").fillna("")
     df["_CC"] = pd.to_numeric(df["_DOC_ASESOR"], errors="coerce").astype("Int64")
