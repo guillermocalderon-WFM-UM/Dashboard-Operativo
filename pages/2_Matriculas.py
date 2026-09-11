@@ -1206,11 +1206,6 @@ with st.sidebar:
         f_min, f_max = fechas_mat.min(), fechas_mat.max()
     else:
         f_min = f_max = hoy
-    # Unas pocas filas traen fechas históricas residuales (2021-2025, previas a la operación
-    # real de la Base). El valor por defecto arranca en el mes en curso; min_value conserva
-    # el histórico completo por si se quiere consultar manualmente.
-    f_ini_default = max(f_min, date(f_max.year, f_max.month, 1))
-
     # Cohorte y Mes son etiquetas operativas, no derivadas de Fecha Contabilización: hay
     # matriculados de un cohorte/mes en curso que pagaron hace años (reingresos). Por eso,
     # al sincronizar el rango de fechas con la selección se ignoran las fechas anteriores al
@@ -1237,7 +1232,7 @@ with st.sidebar:
         valor = st.session_state.get(valor_key)
         if columna == "MES":
             b = _bounds_mes(valor) if valor and valor != "Todos" else None
-            st.session_state["fecha_ini_widget"], st.session_state["fecha_fin_widget"] = b or (f_ini_default, f_max)
+            st.session_state["fecha_ini_widget"], st.session_state["fecha_fin_widget"] = b or (f_min, f_max)
             return
         if not valor or valor == "Todos":
             return
@@ -1253,7 +1248,8 @@ with st.sidebar:
     _bm = _bounds_mes(_mes_activo) if _mes_activo != "Todos" else None
     picker_min, picker_max = _bm if _bm else (f_min, f_max)
 
-    st.session_state.setdefault("fecha_ini_widget", f_ini_default)
+    # Con Mes en "Todos", Desde/Hasta arranca cubriendo TODO el histórico con datos.
+    st.session_state.setdefault("fecha_ini_widget", f_min)
     st.session_state.setdefault("fecha_fin_widget", f_max)
     if not (picker_min <= st.session_state["fecha_ini_widget"] <= picker_max):
         st.session_state["fecha_ini_widget"] = picker_min
