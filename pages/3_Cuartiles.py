@@ -1,4 +1,6 @@
 import base64
+import calendar
+import html
 import io
 
 import numpy as np
@@ -18,6 +20,8 @@ COLOR_ACCENT  = "#0EA5E9"
 COLOR_SUCCESS = "#10B981"
 COLOR_WARNING = "#F59E0B"
 COLOR_DANGER  = "#EF4444"
+_MUTED = "#94A3B8"
+_INDIGO = "#818CF8"
 
 _MES_ORDEN = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -132,25 +136,10 @@ def _excel_bytes(df):
     return buf.getvalue()
 
 
-def df_descarga(df, nombre_archivo, **kwargs):
-    st.dataframe(df, **kwargs)
-    b64 = base64.b64encode(_excel_bytes(df)).decode()
-    st.markdown(
-        f'<div style="text-align:right;margin-top:-6px;margin-bottom:8px">'
-        f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" '
-        f'download="{nombre_archivo}" '
-        f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em" '
-        f'onmouseover="this.style.color=\'rgba(255,255,255,0.75)\'" '
-        f'onmouseout="this.style.color=\'rgba(255,255,255,0.35)\'">'
-        f'↓ Exportar Excel</a></div>',
-        unsafe_allow_html=True,
-    )
-
-
 # ─────────────────────────────────────────────
 # CARGA DE DATOS
 # ─────────────────────────────────────────────
-# Matrículas ya viene resuelta (8 mensuales + directorio): trae _CC, _ASESOR, _SUPERVISOR, MES, AÑO.
+# Matrículas ya viene resuelta (8 mensuales + directorio): trae _CC, _ASESOR, _SUPERVISOR, _COORDINADOR, MES, AÑO.
 _cargar_matriculas = _datos.matriculas
 _cargar_metas = _datos.metas
 _cargar_leads = _datos.leads
@@ -168,7 +157,7 @@ def _cargar_inscripciones() -> pd.DataFrame:
 
 
 _COLS_CLASIFICACION = [
-    "ASESOR", "SUPERVISOR", "META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO",
+    "ASESOR", "SUPERVISOR", "COORDINADOR", "META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO",
     "CUMPL_INSC", "CUMPL_MAT", "CUARTIL", "CUARTIL_INSC",
 ]
 
@@ -215,11 +204,17 @@ def _tabla_clasificacion(mes_sel: str, mes_corte: str | None = None, dia_corte: 
 
     real_mat = (
         _mat_mes.dropna(subset=["_CC"])
-        .groupby("_CC").agg(REAL_MAT=("_CC", "size"), _ASESOR_MAT=("_ASESOR", "first"), _SUPERVISOR_MAT=("_SUPERVISOR", "first"))
+        .groupby("_CC").agg(
+            REAL_MAT=("_CC", "size"), _ASESOR_MAT=("_ASESOR", "first"),
+            _SUPERVISOR_MAT=("_SUPERVISOR", "first"), _COORDINADOR_MAT=("_COORDINADOR", "first"),
+        )
     )
     real_insc = (
         _insc_mes.dropna(subset=["_CC"])
-        .groupby("_CC").agg(REAL_INSC=("_CC", "size"), _ASESOR_INSC=("_ASESOR", "first"), _SUPERVISOR_INSC=("_SUPERVISOR", "first"))
+        .groupby("_CC").agg(
+            REAL_INSC=("_CC", "size"), _ASESOR_INSC=("_ASESOR", "first"),
+            _SUPERVISOR_INSC=("_SUPERVISOR", "first"), _COORDINADOR_INSC=("COORDINADOR", "first"),
+        )
     )
     insumo_mes = (
         _leads_mes.dropna(subset=["_CC"])
@@ -235,6 +230,7 @@ def _tabla_clasificacion(mes_sel: str, mes_corte: str | None = None, dia_corte: 
 
     tabla["ASESOR"] = tabla["_ASESOR_MAT"].fillna(tabla["_ASESOR_INSC"]).fillna(tabla["_ASESOR_META"]).fillna("Sin asignar")
     tabla["SUPERVISOR"] = tabla["_SUPERVISOR_MAT"].fillna(tabla["_SUPERVISOR_INSC"]).fillna(tabla["_SUPERVISOR_META"]).fillna("Sin asignar")
+    tabla["COORDINADOR"] = tabla["_COORDINADOR_MAT"].fillna(tabla["_COORDINADOR_INSC"]).fillna("Sin asignar")
 
     tabla["CUMPL_INSC"] = np.where(
         tabla["META_INSC"] > 0, tabla["REAL_INSC"] / tabla["META_INSC"] * 100,
@@ -271,7 +267,7 @@ def _tabla_periodo(mes_sel: str, meses_ventana: tuple, mes_corte: str | None = N
         return pd.DataFrame(columns=_COLS_CLASIFICACION)
     allp = pd.concat(partes, ignore_index=True)
     t = allp.groupby("ASESOR", as_index=False).agg(
-        SUPERVISOR=("SUPERVISOR", "first"),
+        SUPERVISOR=("SUPERVISOR", "first"), COORDINADOR=("COORDINADOR", "first"),
         META_INSC=("META_INSC", "sum"), META_MAT=("META_MAT", "sum"),
         REAL_INSC=("REAL_INSC", "sum"), REAL_MAT=("REAL_MAT", "sum"), INSUMO=("INSUMO", "sum"),
     )
@@ -302,7 +298,7 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
         # Un mismo nombre puede tener dos cédulas distintas en la base (dato duplicado/reingreso);
         # sin agrupar, t.loc[asesor] devolvería 2 filas en vez de 1 y rompería el resto de la función.
         tablas_mes[mes] = t.groupby("ASESOR", as_index=True).agg(
-            SUPERVISOR=("SUPERVISOR", "first"),
+            SUPERVISOR=("SUPERVISOR", "first"), COORDINADOR=("COORDINADOR", "first"),
             REAL_MAT=("REAL_MAT", "sum"),
             REAL_INSC=("REAL_INSC", "sum"),
             CUARTIL=("CUARTIL", "first"),
@@ -316,6 +312,7 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
     filas = []
     for asesor in todos_asesores:
         supervisor = "Sin asignar"
+        coordinador = "Sin asignar"
         cuartiles_validos = []
         meses_data = []
         mat_total = insc_total = 0
@@ -324,6 +321,7 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
             if asesor in t.index:
                 row = t.loc[asesor]
                 supervisor = row["SUPERVISOR"]
+                coordinador = row["COORDINADOR"]
                 meses_data.append({
                     "MAT": int(row["REAL_MAT"]), "CUARTIL": row["CUARTIL"],
                     "INSC": int(row["REAL_INSC"]), "CUARTIL_INSC": row["CUARTIL_INSC"],
@@ -338,7 +336,7 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
 
         n = len(meses_recientes) or 1
         filas.append({
-            "ASESOR": asesor, "SUPERVISOR": supervisor, "MESES": meses_data,
+            "ASESOR": asesor, "SUPERVISOR": supervisor, "COORDINADOR": coordinador, "MESES": meses_data,
             "MAT_TOTAL": mat_total, "INSC_TOTAL": insc_total,
             "MAT_PROM": mat_total / n, "INSC_PROM": insc_total / n, "DELTA": delta,
         })
@@ -363,8 +361,20 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
     return filas, meses_recientes
 
 
+def _racha_actual_q(fila: dict, q: str = "Q1") -> int:
+    """Meses CONSECUTIVOS más recientes en que el asesor cerró en el cuartil `q`
+    (cuenta hacia atrás desde el último mes con dato; se corta en el primer mes
+    sin dato o en otro cuartil). `fila['MESES']` va de más antiguo a más reciente."""
+    racha = 0
+    for m in reversed(fila["MESES"]):
+        if m is None or m["CUARTIL"] != q:
+            break
+        racha += 1
+    return racha
+
+
 # ─────────────────────────────────────────────
-# TABLA HTML — Clasificación de asesores
+# TABLA HTML — Clasificación de asesores (cálculo y HTML intactos)
 # ─────────────────────────────────────────────
 def _cumpl_cell_html(pct: float) -> str:
     color = COLOR_SUCCESS if pct >= 100 else (COLOR_WARNING if pct >= 70 else COLOR_DANGER)
@@ -412,147 +422,9 @@ def _render_tabla_clasificacion(tabla: pd.DataFrame):
 
 
 # ─────────────────────────────────────────────
-# LISTAS "TOP" (rankings)
+# TABLA HTML — Evolución reciente (últimos N meses; cálculo y HTML intactos)
 # ─────────────────────────────────────────────
-def _iniciales(nombre) -> str:
-    partes = str(nombre).strip().split()
-    if not partes:
-        return "?"
-    return (partes[0][0] + (partes[1][0] if len(partes) > 1 else "")).upper()
-
-
-def _top_lista_html(filas: list[tuple[str, str, str]], color: str) -> str:
-    rows = []
-    for i, (nombre, meta, valor) in enumerate(filas, start=1):
-        rows.append(
-            f"<div class='top-row' style='--ac:{color}'>"
-            f"<span class='top-rank'>{i:02d}</span>"
-            f"<div class='top-avatar'>{_iniciales(nombre)}</div>"
-            f"<div class='top-body'><div class='top-name'>{nombre}</div><div class='top-meta'>{meta}</div></div>"
-            f"<span class='top-value' style='color:{color}'>{valor}</span>"
-            "</div>"
-        )
-    return "<div class='top-list'>" + "".join(rows) + "</div>"
-
-
-# ─────────────────────────────────────────────
-# GRÁFICOS
-# ─────────────────────────────────────────────
-def _fig_cuartil_supervisor(tabla: pd.DataFrame) -> go.Figure:
-    grp = tabla.groupby(["SUPERVISOR", "CUARTIL"]).size().unstack(fill_value=0)
-    for q in ["Q1", "Q2", "Q3", "Q4"]:
-        if q not in grp.columns:
-            grp[q] = 0
-    grp = grp[["Q1", "Q2", "Q3", "Q4"]]
-    grp = grp.loc[grp.sum(axis=1).sort_values().index]
-
-    fig = go.Figure()
-    for q in ["Q1", "Q2", "Q3", "Q4"]:
-        fig.add_trace(go.Bar(
-            y=grp.index, x=grp[q], orientation="h", name=q,
-            marker=dict(color=_COLOR_CUARTIL[q]),
-        ))
-    fig.update_layout(
-        barmode="stack", height=max(280, len(grp) * 26 + 60), margin=dict(l=10, r=20, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
-                   automargin=True),
-        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
-                   automargin=True),
-    )
-    return fig
-
-
-# Todas las gráficas del bloque "Análisis de Cuartiles" comparten alto y márgenes
-# para que queden alineadas a la misma altura.
-_FIG_H = 330
-_LAYOUT_BASE = dict(
-    height=_FIG_H, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-    margin=dict(l=50, r=25, t=45, b=45),
-)
-_AXIS = dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=False)
-_LEGEND = dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)")
-
-
-def _fig_movilidad(filas: list[dict]) -> go.Figure:
-    """Heatmap 4x4: cuartil del primer mes con dato vs cuartil del último — mide movilidad."""
-    idx = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
-    M = [[0] * 4 for _ in range(4)]
-    for f in filas:
-        qs = [m["CUARTIL"] for m in f["MESES"] if m]
-        if len(qs) >= 2:
-            M[idx[qs[0]]][idx[qs[-1]]] += 1
-    fig = go.Figure(go.Heatmap(
-        z=M, x=["Q1", "Q2", "Q3", "Q4"], y=["Q1", "Q2", "Q3", "Q4"],
-        text=M, texttemplate="%{text}", textfont=dict(size=13, color="white"),
-        colorscale=[[0, "rgba(129,140,248,0.05)"], [1, "#818CF8"]], showscale=False,
-        xgap=3, ygap=3,
-        hovertemplate="De %{y} a %{x}: %{z} asesores<extra></extra>",
-    ))
-    fig.update_layout(
-        **_LAYOUT_BASE,
-        xaxis=dict(title="Cuartil al final", tickfont=dict(size=11, color="rgba(255,255,255,0.7)")),
-        yaxis=dict(title="Cuartil al inicio", autorange="reversed", tickfont=dict(size=11, color="rgba(255,255,255,0.7)")),
-    )
-    return fig
-
-
-def _fig_embudo_cuartil(tabla: pd.DataFrame) -> go.Figure:
-    g = tabla.groupby("CUARTIL")[["REAL_INSC", "REAL_MAT"]].mean().reindex(_ORDEN_Q).fillna(0)
-    fig = go.Figure()
-    fig.add_bar(x=g.index, y=g["REAL_INSC"], name="Inscripciones", marker_color="#818CF8",
-                text=[f"{v:.1f}" for v in g["REAL_INSC"]], textposition="outside")
-    fig.add_bar(x=g.index, y=g["REAL_MAT"], name="Matrículas", marker_color=COLOR_SUCCESS,
-                text=[f"{v:.1f}" for v in g["REAL_MAT"]], textposition="outside")
-    fig.update_layout(
-        barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
-        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")), yaxis=_AXIS,
-    )
-    return fig
-
-
-def _fig_cumpl_cuartil(tabla: pd.DataFrame) -> go.Figure:
-    g = tabla.groupby("CUARTIL")[["CUMPL_MAT", "CUMPL_INSC"]].mean().reindex(_ORDEN_Q).fillna(0)
-    fig = go.Figure()
-    fig.add_bar(x=g.index, y=g["CUMPL_MAT"], name="Cumpl. Matrículas", marker_color=COLOR_SUCCESS,
-                text=[f"{v:.0f}%" for v in g["CUMPL_MAT"]], textposition="outside")
-    fig.add_bar(x=g.index, y=g["CUMPL_INSC"], name="Cumpl. Inscripciones", marker_color=COLOR_ACCENT,
-                text=[f"{v:.0f}%" for v in g["CUMPL_INSC"]], textposition="outside")
-    fig.add_hline(y=100, line_dash="dot", line_color="rgba(255,255,255,0.3)")
-    fig.update_layout(
-        barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
-        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")),
-        yaxis=dict(ticksuffix="%", **_AXIS),
-    )
-    return fig
-
-
-def _fig_scatter_insc_mat(tabla: pd.DataFrame) -> go.Figure:
-    fig = go.Figure()
-    for q in _ORDEN_Q:
-        d = tabla[tabla["CUARTIL"] == q]
-        if not len(d):
-            continue
-        fig.add_scatter(
-            x=d["REAL_INSC"], y=d["REAL_MAT"], mode="markers", name=q,
-            marker=dict(color=_COLOR_CUARTIL[q], size=8, line=dict(color="rgba(8,6,15,0.5)", width=1)),
-            text=d["ASESOR"], hovertemplate="<b>%{text}</b><br>Insc: %{x}<br>Mat: %{y}<extra></extra>",
-        )
-    fig.update_layout(
-        **_LAYOUT_BASE, legend=_LEGEND,
-        xaxis=dict(title="Inscripciones", **_AXIS), yaxis=dict(title="Matrículas", **_AXIS),
-    )
-    return fig
-
-
-# ─────────────────────────────────────────────
-# TABLA HTML — Evolución reciente (últimos N meses)
-# ─────────────────────────────────────────────
-def _qcell_html(valor: int, cuartil: str) -> str:
+def _qcell_html(valor, cuartil: str) -> str:
     color_q = _COLOR_CUARTIL.get(cuartil, "#94A3B8")
     return (
         "<td class='qcell'>"
@@ -643,6 +515,510 @@ def _render_tabla_evolucion(filas: list[dict], meses_recientes: list[str]):
 
 
 # ─────────────────────────────────────────────
+# SISTEMA VISUAL "ebi-*" (mismo lenguaje de Inscripciones / Matrículas)
+# ─────────────────────────────────────────────
+def _safe(value) -> str:
+    return html.escape(str(value))
+
+
+def _panel_title(icon: str, title: str, description: str, tag: str = "") -> None:
+    badge = f"<span class='ebi-tag'>{_safe(tag)}</span>" if tag else ""
+    st.markdown(
+        f"<div class='ebi-head'><div class='ebi-icon'>{icon}</div>"
+        f"<div class='ebi-copy'><div class='ebi-title'>{_safe(title)}</div>"
+        f"<div class='ebi-sub'>{_safe(description)}</div></div>{badge}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _section(label: str, title: str) -> None:
+    st.markdown(
+        f"<div class='ebi-section'><span>{_safe(label)}</span><b>{_safe(title)}</b><i></i></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _number_es(value: float) -> str:
+    return f"{value:,.0f}".replace(",", ".")
+
+
+def _percent_es(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " %"
+
+
+# ─────────────────────────────────────────────
+# GRÁFICOS
+# ─────────────────────────────────────────────
+# Todas las gráficas comparten alto y márgenes para quedar alineadas a la misma altura.
+_FIG_H = 330
+_LAYOUT_BASE = dict(
+    height=_FIG_H, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
+    margin=dict(l=50, r=25, t=45, b=45),
+)
+_AXIS = dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"), automargin=False)
+_LEGEND = dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)")
+
+
+def _fig_cuartil_stack(tabla: pd.DataFrame, group_col: str) -> go.Figure:
+    grp = tabla.groupby([group_col, "CUARTIL"]).size().unstack(fill_value=0)
+    for q in _ORDEN_Q:
+        if q not in grp.columns:
+            grp[q] = 0
+    grp = grp[_ORDEN_Q]
+    grp = grp.loc[grp.sum(axis=1).sort_values().index]
+
+    fig = go.Figure()
+    for q in _ORDEN_Q:
+        fig.add_trace(go.Bar(
+            y=grp.index, x=grp[q], orientation="h", name=q,
+            marker=dict(color=_COLOR_CUARTIL[q]),
+        ))
+    fig.update_layout(
+        barmode="stack", height=max(280, len(grp) * 26 + 60), margin=dict(l=10, r=20, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
+        legend=_LEGEND,
+        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
+                   automargin=True),
+        yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
+                   automargin=True),
+    )
+    return fig
+
+
+def _render_movilidad(filas: list[dict]) -> None:
+    """Heatmap 4x4: cuartil del primer mes con dato vs cuartil del último — mide
+    movilidad. Clic en una celda muestra quiénes hicieron esa transición."""
+    idx = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
+    M = [[0] * 4 for _ in range(4)]
+    quien: dict[tuple, list[str]] = {}
+    for f in filas:
+        qs = [m["CUARTIL"] for m in f["MESES"] if m]
+        if len(qs) >= 2:
+            i, j = idx[qs[0]], idx[qs[-1]]
+            M[i][j] += 1
+            quien.setdefault((i, j), []).append(f["ASESOR"])
+    fig = go.Figure(go.Heatmap(
+        z=M, x=["Q1", "Q2", "Q3", "Q4"], y=["Q1", "Q2", "Q3", "Q4"],
+        text=M, texttemplate="%{text}", textfont=dict(size=14, color="white"),
+        colorscale=[[0, "rgba(129,140,248,0.05)"], [1, "#818CF8"]], showscale=False,
+        xgap=3, ygap=3,
+        hovertemplate="De %{y} a %{x}: %{z} asesores<extra></extra>",
+    ))
+    fig.update_layout(
+        **{**_LAYOUT_BASE, "height": 440, "margin": dict(l=70, r=25, t=20, b=55)},
+        xaxis=dict(title="Cuartil al final", tickfont=dict(size=12, color="rgba(255,255,255,0.75)")),
+        yaxis=dict(title="Cuartil al inicio", autorange="reversed", tickfont=dict(size=12, color="rgba(255,255,255,0.75)")),
+    )
+    event = st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key="cuart_movilidad", on_select="rerun", selection_mode="points")
+    try:
+        point = event.selection.points[0]
+        qi, qf = point["y"], point["x"]
+        nombres = sorted(quien.get((idx[qi], idx[qf]), []))
+        if nombres:
+            st.markdown(f"**{qi} → {qf}** ({len(nombres)} asesores): " + ", ".join(_safe(n) for n in nombres))
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        pass
+
+
+def _fig_embudo_insumo(tabla: pd.DataFrame) -> go.Figure:
+    """Embudo de 3 etapas por cuartil: Insumo (leads) → Inscripción → Matrícula."""
+    g = tabla.groupby("CUARTIL")[["INSUMO", "REAL_INSC", "REAL_MAT"]].mean().reindex(_ORDEN_Q).fillna(0)
+    fig = go.Figure()
+    fig.add_bar(x=g.index, y=g["INSUMO"], name="Insumo (leads)", marker_color=_INDIGO,
+                text=[f"{v:.1f}" for v in g["INSUMO"]], textposition="outside")
+    fig.add_bar(x=g.index, y=g["REAL_INSC"], name="Inscripciones", marker_color=COLOR_ACCENT,
+                text=[f"{v:.1f}" for v in g["REAL_INSC"]], textposition="outside")
+    fig.add_bar(x=g.index, y=g["REAL_MAT"], name="Matrículas", marker_color=COLOR_SUCCESS,
+                text=[f"{v:.1f}" for v in g["REAL_MAT"]], textposition="outside")
+    fig.update_layout(
+        barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
+        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")), yaxis=_AXIS,
+    )
+    return fig
+
+
+def _fig_scatter_insc_mat(tabla: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    for q in _ORDEN_Q:
+        d = tabla[tabla["CUARTIL"] == q]
+        if not len(d):
+            continue
+        fig.add_scatter(
+            x=d["REAL_INSC"], y=d["REAL_MAT"], mode="markers", name=q,
+            marker=dict(color=_COLOR_CUARTIL[q], size=8, line=dict(color="rgba(8,6,15,0.5)", width=1)),
+            text=d["ASESOR"], hovertemplate="<b>%{text}</b><br>Insc: %{x}<br>Mat: %{y}<extra></extra>",
+        )
+    x = tabla["REAL_INSC"].to_numpy(dtype=float)
+    y = tabla["REAL_MAT"].to_numpy(dtype=float)
+    if len(x) >= 2 and np.ptp(x) > 0:
+        b, a = np.polyfit(x, y, 1)
+        x_line = np.array([x.min(), x.max()])
+        fig.add_scatter(
+            x=x_line, y=b * x_line + a, mode="lines", name="Tendencia",
+            line=dict(color="rgba(255,255,255,.55)", width=2, dash="dash"), hoverinfo="skip",
+        )
+    fig.update_layout(
+        **_LAYOUT_BASE, legend=_LEGEND,
+        xaxis=dict(title="Inscripciones", **_AXIS), yaxis=dict(title="Matrículas", **_AXIS),
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────
+# PERFIL DE DESEMPEÑO (radar) — nuevo
+# ─────────────────────────────────────────────
+def _perfil_asesor(tabla: pd.DataFrame, filas_evolucion: list[dict], asesor: str) -> dict | None:
+    row = tabla[tabla["ASESOR"] == asesor]
+    if row.empty:
+        return None
+    row = row.iloc[0]
+    fila_evo = next((f for f in filas_evolucion if f["ASESOR"] == asesor), None)
+    mats_mensuales = [m["MAT"] for m in (fila_evo["MESES"] if fila_evo else []) if m]
+    media = float(np.mean(mats_mensuales)) if mats_mensuales else 0.0
+    desv = float(np.std(mats_mensuales)) if len(mats_mensuales) > 1 else 0.0
+    consistencia = 100 / (1 + (desv / media if media else 9))
+    conversion = (row["REAL_MAT"] / row["REAL_INSC"] * 100) if row["REAL_INSC"] else 0.0
+    return {
+        "Cumplimiento": min(float(row["CUMPL_MAT"]), 150.0),
+        "Volumen": float(row["REAL_MAT"]),
+        "Conversion": conversion,
+        "Consistencia": consistencia,
+        "Insumo": float(row["INSUMO"]),
+    }
+
+
+def _render_perfil(tabla: pd.DataFrame, filas_evolucion: list[dict]) -> None:
+    _panel_title("◉", "Perfil de Desempeño", "Cinco dimensiones normalizadas para comparar asesores, no solo volumen.", "0–100")
+    asesores = sorted(tabla["ASESOR"].unique().tolist())
+    if not asesores:
+        st.caption("Sin asesores para comparar."); return
+    default = tabla.sort_values("REAL_MAT", ascending=False)["ASESOR"].head(2).tolist()
+    seleccionados = st.multiselect(
+        "Comparar asesores (máximo 3)", asesores, default=default, max_selections=3, key="cuart_radar_asesores",
+    )
+    if not seleccionados:
+        st.info("Selecciona uno o varios asesores para comparar su perfil."); return
+    perfiles = {a: _perfil_asesor(tabla, filas_evolucion, a) for a in seleccionados}
+    perfiles = {a: p for a, p in perfiles.items() if p}
+    if not perfiles:
+        st.info("Sin datos suficientes."); return
+    max_vol = max(p["Volumen"] for p in perfiles.values()) or 1.0
+    max_insumo = max(p["Insumo"] for p in perfiles.values()) or 1.0
+    axes = ["Cumplimiento", "Volumen", "Conversión", "Consistencia", "Insumo"]
+    defs = {
+        "Cumplimiento": "% de meta de matrículas alcanzada",
+        "Volumen": "Matrículas relativo al mejor del grupo comparado",
+        "Conversión": "Matrículas / inscripciones del mes",
+        "Consistencia": "100 / (1 + coeficiente de variación mensual)",
+        "Insumo": "Leads utilizados, relativo al mejor del grupo comparado",
+    }
+    palette = [COLOR_ACCENT, COLOR_SUCCESS, _INDIGO]
+    fig = go.Figure()
+    for i, (asesor, p) in enumerate(perfiles.items()):
+        vals = [
+            min(p["Cumplimiento"], 100), p["Volumen"] / max_vol * 100, min(p["Conversion"], 100),
+            p["Consistencia"], p["Insumo"] / max_insumo * 100,
+        ]
+        vals += vals[:1]
+        theta = axes + axes[:1]
+        fig.add_scatterpolar(
+            r=vals, theta=theta, fill="toself", name=asesor,
+            line=dict(color=palette[i % len(palette)], width=2),
+            fillcolor="rgba(56,189,248,.08)",
+            customdata=[defs[a] for a in theta],
+            hovertemplate="%{theta}: %{r:.1f}<br>%{customdata}<extra>%{fullData.name}</extra>",
+        )
+    fig.update_layout(
+        height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"), legend=_LEGEND,
+        polar=dict(bgcolor="rgba(0,0,0,0)", radialaxis=dict(range=[0, 100], gridcolor="rgba(255,255,255,.10)", tickfont=dict(size=9)),
+                   angularaxis=dict(gridcolor="rgba(255,255,255,.08)")),
+    )
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+# ─────────────────────────────────────────────
+# RIESGO DE CUARTIL (proyección Monte Carlo) — nuevo
+# ─────────────────────────────────────────────
+def _historial_diario_mat(asesor: str, mes: str, anio: int) -> pd.Series:
+    """Serie diaria (índice 1..N) de matrículas de UN asesor en un mes/año dado."""
+    mat = _cargar_matriculas()
+    d = mat[(mat["_ASESOR"] == asesor) & (mat["MES"] == mes) & (mat["AÑO"] == anio)]
+    ultimo_dia = calendar.monthrange(anio, _MES_ORDEN.index(mes) + 1)[1]
+    dias = pd.to_numeric(d["DÍA"], errors="coerce").dropna().astype(int)
+    return dias.value_counts().reindex(range(1, ultimo_dia + 1), fill_value=0).sort_index()
+
+
+def _proyeccion_cuartil(asesor: str, mes: str, anio: int, dia_corte: int | None, umbral_mat: pd.DataFrame, seed: int = 42) -> dict:
+    """Bootstrap simple sobre el ritmo diario observado del asesor (a nivel de
+    Cuartiles se trabaja por mes, sin el calendario de días hábiles que sí usan
+    Inscripciones/Matrículas) para estimar en qué cuartil cerraría, comparando
+    contra los umbrales REALES (FOTO) de `umbral_mat`."""
+    serie = _historial_diario_mat(asesor, mes, anio)
+    ultimo_dia = len(serie)
+    corte = min(dia_corte, ultimo_dia) if dia_corte else ultimo_dia
+    observado = serie.loc[:corte] if corte else serie
+    restante = ultimo_dia - corte
+    actual = int(observado.sum())
+    if restante <= 0 or observado.empty or observado.sum() == 0:
+        outcomes = np.full(2000, float(actual))
+    else:
+        rng = np.random.default_rng(seed)
+        pool = observado.to_numpy()
+        outcomes = actual + rng.choice(pool, size=(2000, restante), replace=True).sum(axis=1)
+
+    bordes = {q: umbral_mat.loc[q, "FOTO"] for q in _ORDEN_Q if q in umbral_mat.index and pd.notna(umbral_mat.loc[q, "FOTO"])}
+
+    def _cuartil_de(v: float) -> str:
+        if "Q4" in bordes and v >= bordes["Q4"]:
+            return "Q4"
+        if "Q3" in bordes and v >= bordes["Q3"]:
+            return "Q3"
+        if "Q2" in bordes and v >= bordes["Q2"]:
+            return "Q2"
+        return "Q1"
+
+    cuartiles_sim = pd.Series([_cuartil_de(v) for v in outcomes])
+    dist = cuartiles_sim.value_counts(normalize=True).reindex(_ORDEN_Q, fill_value=0.0) * 100
+    p10, p50, p90 = np.percentile(outcomes, [10, 50, 90])
+    return {
+        "actual": actual, "p10": float(p10), "p50": float(p50), "p90": float(p90),
+        "dist": dist, "restante": restante, "cuartil_p50": _cuartil_de(p50),
+    }
+
+
+def _render_riesgo_cuartil(tabla: pd.DataFrame, mes_corte: str | None, dia_corte: int | None) -> None:
+    _panel_title("◎", "Riesgo de Cuartil", "Simulación del cierre de mes (ritmo reciente) contra los umbrales reales del mes de corte.", "PREDICTIVO")
+    if not mes_corte:
+        st.info("Selecciona un mes de corte en el sidebar para proyectar."); return
+    tabla_corte = _tabla_clasificacion(mes_corte)
+    if tabla_corte.empty:
+        st.info("Sin datos para proyectar este mes."); return
+    umbral_corte = _tabla_umbrales(tabla_corte, "REAL_MAT", "CUARTIL", _PROPUESTO_MAT)
+    metas_full = _cargar_metas()
+    anios = metas_full.loc[metas_full["MES"] == mes_corte, "AÑO"].dropna()
+    if not len(anios):
+        st.info("Sin datos para proyectar este mes."); return
+    anio_sel = int(anios.mode().iat[0])
+    asesores = sorted(tabla["ASESOR"].unique().tolist())
+    if not asesores:
+        st.info("Sin asesores para proyectar."); return
+    asesor = st.selectbox("Asesor", asesores, key="cuart_riesgo_asesor")
+    stats = _proyeccion_cuartil(asesor, mes_corte, anio_sel, dia_corte, umbral_corte)
+    cuartil_actual_s = tabla.loc[tabla["ASESOR"] == asesor, "CUARTIL"]
+    cuartil_actual = cuartil_actual_s.iloc[0] if len(cuartil_actual_s) else "—"
+    color_actual = _COLOR_CUARTIL.get(cuartil_actual, _MUTED)
+    color_p50 = _COLOR_CUARTIL.get(stats["cuartil_p50"], _MUTED)
+    st.markdown(
+        f"<div class='ebi-forecast'>"
+        f"<span>CUARTIL ACTUAL<b style='color:{color_actual}'>{cuartil_actual}</b></span>"
+        f"<span>MATRÍCULAS A LA FECHA<b>{_number_es(stats['actual'])}</b></span>"
+        f"<span>PROYECCIÓN P50<b>{_number_es(stats['p50'])}</b></span>"
+        f"<span>RANGO P10–P90<b>{_number_es(stats['p10'])} – {_number_es(stats['p90'])}</b></span>"
+        f"<span>CUARTIL PROYECTADO<b style='color:{color_p50}'>{stats['cuartil_p50']}</b></span>"
+        f"</div>", unsafe_allow_html=True,
+    )
+    fig = go.Figure(go.Bar(
+        x=_ORDEN_Q, y=[float(stats["dist"][q]) for q in _ORDEN_Q],
+        marker_color=[_COLOR_CUARTIL[q] for q in _ORDEN_Q],
+        text=[f"{stats['dist'][q]:.0f}%" for q in _ORDEN_Q], textposition="outside", cliponaxis=False,
+        hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(**{**_LAYOUT_BASE, "height": 280}, xaxis=_AXIS, yaxis={**_AXIS, "title": "Probabilidad (%)", "range": [0, 108]})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+# ─────────────────────────────────────────────
+# ALERTAS DE RIESGO (racha en Q1) — nuevo, reemplaza Top10/Últimos10
+# ─────────────────────────────────────────────
+def _render_alertas_riesgo(filas: list[dict], meses_recientes: list[str]) -> None:
+    riesgo = sorted(
+        (f for f in filas if _racha_actual_q(f, "Q1") >= 2),
+        key=lambda f: (_racha_actual_q(f, "Q1"), -f["MAT_PROM"]), reverse=True,
+    )
+    _panel_title("⚠", "Alertas de Riesgo", f"Asesores con 2 o más meses seguidos en Q1, de los últimos {len(meses_recientes)} meses.", f"{len(riesgo)} EN RIESGO")
+    if not riesgo:
+        st.success("Nadie lleva 2 o más meses seguidos en Q1."); return
+    cards = []
+    for f in riesgo:
+        racha = _racha_actual_q(f, "Q1")
+        cards.append(
+            "<article class='ebi-incident critical'><div class='ebi-inc-dot'>●</div>"
+            f"<div class='ebi-inc-body'><div class='ebi-inc-name'>{_safe(f['ASESOR'])}</div>"
+            f"<div class='ebi-inc-sup'>{_safe(f['SUPERVISOR'])}</div>"
+            f"<div class='ebi-inc-main'><strong>{racha} meses seguidos en Q1</strong>"
+            f"<span>Promedio: {f['MAT_PROM']:.1f} matrículas/mes</span></div>"
+            f"<div class='ebi-inc-foot'><span>Últimos {len(meses_recientes)} meses: <b>{int(f['MAT_TOTAL'])} matrículas</b></span></div></div>"
+            f"<div class='ebi-inc-badge'>{racha} MESES</div></article>"
+        )
+    st.markdown("<div class='ebi-inc-scroll'>" + "".join(cards) + "</div>", unsafe_allow_html=True)
+
+
+def _render_overview_kpis(tabla_mes: pd.DataFrame, filas_evolucion: list[dict], mes_lbl: str) -> None:
+    total = len(tabla_mes)
+    n_q1 = int((tabla_mes["CUARTIL"] == "Q1").sum()) if total else 0
+    n_q4 = int((tabla_mes["CUARTIL"] == "Q4").sum()) if total else 0
+    cumpl = float(tabla_mes["CUMPL_MAT"].mean()) if total else 0.0
+    insumo_total = int(tabla_mes["INSUMO"].sum()) if total else 0
+    en_riesgo = sum(1 for f in filas_evolucion if _racha_actual_q(f, "Q1") >= 2)
+    color_cumpl = COLOR_SUCCESS if cumpl >= 100 else (COLOR_WARNING if cumpl >= 70 else COLOR_DANGER)
+    cards = [
+        ("👥", "Total asesores", _number_es(total), f"cuartilizados · {mes_lbl}", COLOR_ACCENT, ""),
+        ("⚠️", "Asesores en Q1", _number_es(n_q1), "25% de menor volumen", COLOR_DANGER, ""),
+        ("🏆", "Asesores en Q4", _number_es(n_q4), "25% de mayor volumen", COLOR_SUCCESS, ""),
+        ("🎯", "Cumplimiento promedio", _percent_es(cumpl), "meta de matrículas", color_cumpl,
+         f"<div class='ebi-overview-track'><i style='width:{min(max(cumpl, 0), 100):.1f}%'></i></div>"),
+        ("📥", "Insumo total", _number_es(insumo_total), "leads asignados · " + mes_lbl, _INDIGO, ""),
+        ("🚨", "En riesgo", _number_es(en_riesgo), "2+ meses seguidos en Q1", COLOR_DANGER, ""),
+    ]
+    html_cards = "".join(
+        f"<article class='ebi-overview-card' style='--accent:{color}'>"
+        f"<div class='ebi-overview-head'><span>{icon}</span><b>{label}</b></div>"
+        f"<strong>{value}</strong><small>{detail}</small>{extra}</article>"
+        for icon, label, value, detail, color, extra in cards
+    )
+    st.markdown(f"<div class='ebi-overview'>{html_cards}</div>", unsafe_allow_html=True)
+
+
+def _css() -> None:
+    st.markdown("""
+    <style>
+    .ebi-top{position:relative;overflow:hidden;margin:0 0 10px;padding:19px 22px;border:1px solid rgba(56,189,248,.16);border-radius:16px;background:linear-gradient(110deg,rgba(56,189,248,.075),rgba(16,185,129,.035) 55%,rgba(129,140,248,.045));display:flex;align-items:center;justify-content:space-between;gap:24px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
+    .ebi-top::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#38BDF8,#34D399)}.ebi-top::after{content:'';position:absolute;width:260px;height:160px;right:-90px;top:-105px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.11),transparent 70%);pointer-events:none}.ebi-top-copy{position:relative;z-index:1;min-width:0}.ebi-top-context{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:8px;font-weight:850;letter-spacing:.18em;color:#7DD3FC}.ebi-top-context i{display:block;width:18px;height:1px;background:#38BDF8}.ebi-top h1{font-family:'Space Grotesk',sans-serif!important;font-size:26px!important;line-height:1.08!important;color:white;margin:0!important}.ebi-top p{font-size:10px;color:rgba(255,255,255,.43);margin:6px 0 0}.ebi-period{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto;padding-left:22px;border-left:1px solid rgba(255,255,255,.09)}.ebi-period span{font-size:7px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.35)}.ebi-period b{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.04em;color:#7DD3FC;white-space:nowrap}
+    div.st-key-cuart_module_nav{margin:0 0 8px;padding:5px;border:1px solid rgba(255,255,255,.085);border-radius:13px;background:rgba(2,17,13,.55);box-shadow:0 8px 30px -26px rgba(0,0,0,.9)}div.st-key-cuart_module_nav div[data-testid='stHorizontalBlock']{gap:5px}div.st-key-cuart_module_nav button{min-height:39px!important;border:1px solid transparent!important;border-radius:9px!important;background:transparent!important;color:rgba(255,255,255,.62)!important;box-shadow:none!important;font-size:11px!important;font-weight:650!important;transition:background .16s,color .16s,border-color .16s!important}div.st-key-cuart_module_nav button:hover{color:white!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.075)!important}div.st-key-cuart_module_nav button[kind='primary']{color:#7DD3FC!important;background:linear-gradient(135deg,rgba(56,189,248,.14),rgba(16,185,129,.08))!important;border-color:rgba(56,189,248,.22)!important;box-shadow:inset 0 -2px 0 #38BDF8!important}
+    .ebi-overview{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:14px 0 6px}.ebi-overview-card{position:relative;overflow:hidden;min-width:0;padding:13px 13px 12px;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,rgba(255,255,255,.035)),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}.ebi-overview-card::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent)}.ebi-overview-head{display:flex;align-items:center;gap:7px;min-width:0}.ebi-overview-head span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 22px;border-radius:7px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:11px;font-weight:900}.ebi-overview-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.56);font-size:8px;letter-spacing:.075em;text-transform:uppercase}.ebi-overview-card>strong{display:block;margin:10px 0 2px;font-family:'Space Grotesk',sans-serif;font-size:22px;line-height:1;color:#fff}.ebi-overview-card>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.40);font-size:8px}.ebi-overview-track{height:3px;margin-top:9px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.ebi-overview-track i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+    .ebi-section{display:flex;align-items:center;gap:10px;margin:22px 0 9px}.ebi-section span{font-size:9px;font-weight:800;letter-spacing:.16em;color:#38BDF8}.ebi-section b{font-family:'Space Grotesk',sans-serif;font-size:15px;color:white}.ebi-section i{height:1px;flex:1;background:linear-gradient(90deg,rgba(255,255,255,.14),transparent)}
+    .ebi-head{display:flex;align-items:center;gap:11px;margin:10px 0 5px;padding:10px 12px;border-left:2px solid #38BDF8;background:linear-gradient(90deg,rgba(56,189,248,.07),transparent);border-radius:0 12px 12px 0}.ebi-icon{width:31px;height:31px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:rgba(255,255,255,.07)}.ebi-copy{flex:1}.ebi-title{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:#fff}.ebi-sub{font-size:10px;color:rgba(255,255,255,.43);margin-top:2px}.ebi-tag{font-size:8px;font-weight:800;letter-spacing:.10em;color:#7DD3FC;border:1px solid rgba(56,189,248,.24);border-radius:99px;padding:4px 8px}
+    .ebi-kpis,.ebi-forecast{display:flex;gap:10px;margin:8px 0}.ebi-kpis span,.ebi-forecast span{flex:1;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;font-size:9px;letter-spacing:.08em;color:rgba(255,255,255,.45)}.ebi-kpis b,.ebi-forecast b{font-family:'Space Grotesk',sans-serif;font-size:17px;margin-right:7px;color:white}.ebi-forecast span{display:flex;flex-direction:column;gap:4px}.ebi-forecast b{font-size:20px;margin:0}
+    .ebi-inc-scroll{max-height:560px;overflow-y:auto;padding:2px 6px 2px 1px;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.35) transparent}.ebi-incident{position:relative;display:flex;gap:10px;margin:0 0 9px;padding:13px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--incident);box-shadow:0 8px 22px -18px rgba(0,0,0,.9)}.ebi-incident.warning{--incident:#F59E0B}.ebi-incident.critical{--incident:#F43F5E}.ebi-inc-dot{color:var(--incident);font-size:10px;padding-top:3px}.ebi-inc-body{min-width:0;flex:1}.ebi-inc-name{font-size:12px;font-weight:750;color:rgba(255,255,255,.94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ebi-inc-sup{font-size:9px;color:rgba(255,255,255,.40);margin:2px 0 9px}.ebi-inc-main{display:flex;flex-direction:column;gap:2px}.ebi-inc-main strong{font-family:'Space Grotesk',sans-serif;font-size:13px;color:white}.ebi-inc-main span{font-size:9px;color:rgba(255,255,255,.52)}.ebi-inc-foot{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);font-size:8px;color:rgba(255,255,255,.38)}.ebi-inc-foot b{color:rgba(255,255,255,.70)}.ebi-inc-badge{align-self:flex-start;font-size:7px;font-weight:850;letter-spacing:.08em;color:var(--incident);background:color-mix(in srgb,var(--incident) 10%,transparent);border:1px solid color-mix(in srgb,var(--incident) 28%,transparent);border-radius:99px;padding:3px 6px;white-space:nowrap}
+    @media(max-width:1100px){.ebi-overview{grid-template-columns:repeat(3,minmax(0,1fr))}.ebi-inc-scroll{max-height:500px}.ebi-forecast{flex-wrap:wrap}.ebi-forecast span{min-width:42%}}
+    @media(max-width:720px){.ebi-top{align-items:flex-start;flex-direction:column;gap:13px}.ebi-period{align-items:flex-start;padding:0;border-left:0}.ebi-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    div[data-testid='stVerticalBlockBorderWrapper']{border-color:rgba(255,255,255,.08)!important;background:rgba(255,255,255,.018)!important;border-radius:16px!important}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render(
+    tabla_mes: pd.DataFrame, tabla_vista: pd.DataFrame, filas_evolucion: list[dict], meses_evolucion: list[str],
+    umbral_mat: pd.DataFrame, umbral_insc: pd.DataFrame, umbral_lbl: str,
+    mes_sel: str, mes_corte: str | None, dia_corte: int | None, mes_lbl: str, periodo_lbl: str,
+) -> None:
+    _css()
+    st.markdown(
+        f"<div class='ebi-top'><div class='ebi-top-copy'>"
+        f"<div class='ebi-top-context'><i></i>CUARTILES</div>"
+        f"<h1>Centro de Operaciones</h1>"
+        f"<p>Clasificacion, calibracion y riesgo de cuartil por asesor</p></div>"
+        f"<div class='ebi-period'><span>MES</span><b>{_safe(mes_sel or '—')}</b></div></div>",
+        unsafe_allow_html=True,
+    )
+    home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
+    insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
+    mat_pg = st.Page("pages/2_Matriculas.py", title="Matriculas", icon="🎓")
+    rt_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
+    with st.container(key="cuart_module_nav"):
+        n1, n2, n3, n4, n5 = st.columns(5)
+        with n1:
+            if st.button("⌂  Inicio", key="cuart_nav_home", width="stretch"): st.switch_page(home_pg)
+        with n2:
+            if st.button("▤  Inscripciones", key="cuart_nav_ins", width="stretch"): st.switch_page(insc_pg)
+        with n3:
+            if st.button("◆  Matriculas", key="cuart_nav_mat", width="stretch"): st.switch_page(mat_pg)
+        with n4: st.button("◇  Cuartiles", key="cuart_nav_q", width="stretch", type="primary")
+        with n5:
+            if st.button("●  Real time", key="cuart_nav_rt", width="stretch"): st.switch_page(rt_pg)
+
+    _render_overview_kpis(tabla_mes, filas_evolucion, mes_lbl)
+
+    _section("A", "CALIBRACION")
+    with st.container(border=True):
+        _panel_title("📐", "Umbrales de Cuartil", f"Cortes reales por cuartil frente al objetivo propuesto — {umbral_lbl}.", "CALIBRACION")
+        c1, c2 = st.columns(2)
+        with c1: _render_tabla_umbrales(umbral_mat, "Matrículas", "🎓", "Propuesto fijo · Q1 6,5 · Q2 9,5 · Q3 13 · Q4 39,5")
+        with c2: _render_tabla_umbrales(umbral_insc, "Inscripciones", "📝", "Propuesto = umbral real del cuartil siguiente")
+
+    _section("B", "EVOLUCION")
+    with st.container(border=True):
+        _panel_title("📈", "Evolución Reciente", f"Matrículas e inscripciones por asesor en {', '.join(meses_evolucion) if meses_evolucion else 'los últimos meses'}.", f"{len(filas_evolucion)} ASESORES")
+        if filas_evolucion:
+            _render_tabla_evolucion(filas_evolucion, meses_evolucion)
+            _export_evo = _df_evolucion_export(filas_evolucion, meses_evolucion)
+            _b64_evo = base64.b64encode(_excel_bytes(_export_evo)).decode()
+            st.markdown(
+                f'<div style="text-align:right;margin-top:-6px;margin-bottom:2px">'
+                f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{_b64_evo}" '
+                f'download="evolucion_reciente.xlsx" '
+                f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
+                f'↓ Exportar Excel</a></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Sin histórico suficiente para mostrar la evolución.")
+    with st.container(border=True):
+        _panel_title("🔀", "Movilidad de Cuartiles", "Cuartil de matrículas al inicio vs. al final de la ventana — clic en una celda para ver quiénes.", "TRAYECTORIA")
+        if filas_evolucion:
+            _render_movilidad(filas_evolucion)
+        else:
+            st.caption("Sin histórico suficiente.")
+
+    _section("C", "DISTRIBUCION")
+    with st.container(border=True):
+        _panel_title("🧭", "Cuartil de Matrículas por Supervisor", f"Asesores de cada supervisor por cuartil — {periodo_lbl}.", "DISTRIBUCION")
+        if len(tabla_vista): st.plotly_chart(_fig_cuartil_stack(tabla_vista, "SUPERVISOR"), width="stretch", config={"displayModeBar": False})
+        else: st.caption("Sin datos para esta gráfica.")
+    with st.container(border=True):
+        _panel_title("🧭", "Cuartil de Matrículas por Coordinador", f"Asesores de cada coordinador por cuartil — {periodo_lbl}.", "DISTRIBUCION")
+        if len(tabla_vista): st.plotly_chart(_fig_cuartil_stack(tabla_vista, "COORDINADOR"), width="stretch", config={"displayModeBar": False})
+        else: st.caption("Sin datos para esta gráfica.")
+
+    _section("D", "DIAGNOSTICO")
+    d1, d2 = st.columns(2)
+    with d1:
+        with st.container(border=True):
+            _panel_title("📊", "Insumo → Inscripción → Matrícula", "Promedio por asesor de cada cuartil, en las tres etapas del embudo.", "EMBUDO")
+            if len(tabla_vista): st.plotly_chart(_fig_embudo_insumo(tabla_vista), width="stretch", config={"displayModeBar": False})
+            else: st.caption("Sin datos.")
+    with d2:
+        with st.container(border=True):
+            _panel_title("✨", "Inscripciones vs Matrículas", "Cada punto es un asesor · color = cuartil · línea = tendencia general.", "RELACION")
+            if len(tabla_vista): st.plotly_chart(_fig_scatter_insc_mat(tabla_vista), width="stretch", config={"displayModeBar": False})
+            else: st.caption("Sin datos.")
+    with st.container(border=True):
+        if len(tabla_vista): _render_perfil(tabla_vista, filas_evolucion)
+        else: _panel_title("◉", "Perfil de Desempeño", "Cinco dimensiones normalizadas para comparar asesores.", "0–100"); st.caption("Sin datos.")
+    with st.container(border=True):
+        _render_riesgo_cuartil(tabla_vista, mes_corte, dia_corte)
+    with st.container(border=True):
+        _render_alertas_riesgo(filas_evolucion, meses_evolucion)
+
+    _section("E", "CONTROL")
+    with st.container(border=True):
+        _panel_title("🏆", "Clasificación de Asesores", "Meta y real de inscripciones y matrículas por asesor, con su cuartil de desempeño.", f"{len(tabla_vista)} ASESORES")
+        if len(tabla_vista):
+            _render_tabla_clasificacion(tabla_vista)
+            _export = tabla_vista.rename(columns={
+                "ASESOR": "ASESOR", "SUPERVISOR": "SUPERVISOR", "COORDINADOR": "COORDINADOR",
+                "META_INSC": "META INSCRIPCIONES", "META_MAT": "META MATRICULAS",
+                "REAL_INSC": "INSCRIPCIONES", "REAL_MAT": "MATRICULAS", "INSUMO": "INSUMO (LEADS)",
+                "CUMPL_INSC": "CUMPLIMIENTO INSCRIPCIONES %", "CUMPL_MAT": "CUMPLIMIENTO MATRICULAS %",
+                "CUARTIL": "CUARTIL",
+            })
+            _b64 = base64.b64encode(_excel_bytes(_export)).decode()
+            st.markdown(
+                f'<div style="text-align:right;margin-top:-14px;margin-bottom:8px">'
+                f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{_b64}" '
+                f'download="cuartiles_{mes_sel.lower()}.xlsx" '
+                f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
+                f'↓ Exportar Excel</a></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Sin asesores para esta selección.")
+
+
+# ─────────────────────────────────────────────
 # LOGO
 # ─────────────────────────────────────────────
 _LOGO_PATH = "logo-scala-learning-transformacion-digital-universidades.webp"
@@ -724,11 +1100,16 @@ with st.sidebar:
         _tabla_periodo(mes_sel, tuple(_MESES_VENTANA), mes_corte, dia_corte)
         if mes_sel else pd.DataFrame(columns=_COLS_CLASIFICACION)
     )
-    supervisores = ["Todos"] + sorted(s for s in tabla_mes_full["SUPERVISOR"].unique().tolist() if s and s != "Sin asignar")
+
+    coordinadores = ["Todos"] + sorted(c for c in tabla_mes_full["COORDINADOR"].unique().tolist() if c and c != "Sin asignar")
+    coord_sel = st.selectbox("Coordinador", coordinadores)
+
+    _base_sup = tabla_mes_full if coord_sel == "Todos" else tabla_mes_full[tabla_mes_full["COORDINADOR"] == coord_sel]
+    supervisores = ["Todos"] + sorted(s for s in _base_sup["SUPERVISOR"].unique().tolist() if s and s != "Sin asignar")
     sup_sel = st.selectbox("Supervisor", supervisores)
 
-    # Los expertos disponibles dependen del supervisor elegido.
-    _base_exp = tabla_mes_full if sup_sel == "Todos" else tabla_mes_full[tabla_mes_full["SUPERVISOR"] == sup_sel]
+    # Los expertos disponibles dependen del coordinador/supervisor elegido.
+    _base_exp = _base_sup if sup_sel == "Todos" else _base_sup[_base_sup["SUPERVISOR"] == sup_sel]
     expertos = ["Todos"] + sorted(e for e in _base_exp["ASESOR"].unique().tolist() if e and e != "Sin asignar")
     exp_sel = st.selectbox("Experto", expertos)
 
@@ -789,133 +1170,8 @@ st.markdown(f"""
     div[data-testid="stSidebarContent"] {{ width:100%!important; box-sizing:border-box!important; padding-right:0.75rem!important; }}
     div[data-testid="stSidebarContent"] > div {{ width:100%!important; }}
 
-    /* ── Header banner ── */
-    .st-key-hdrbanner {{
-        position: relative; overflow: hidden;
-        background:
-            radial-gradient(ellipse 70% 130% at 2% -15%,  rgba(14,165,233,0.34) 0%, transparent 60%),
-            radial-gradient(ellipse 65% 130% at 100% 120%, rgba(129,140,248,0.34) 0%, transparent 60%),
-            radial-gradient(ellipse 55% 110% at 72% 130%,  rgba(52,211,153,0.16) 0%, transparent 60%),
-            linear-gradient(155deg, #071811 0%, #0C2B1D 50%, #061109 100%);
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 20px; padding: 18px 30px; margin-bottom: 18px;
-        box-shadow: 0 18px 46px -18px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
-    }}
-    .hb-eyebrow {{ display:inline-flex;align-items:center;gap:8px;
-        background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);
-        border-radius:99px;padding:5px 13px;margin-bottom:11px;
-        font-size:10px;font-weight:700;color:rgba(255,255,255,0.78);
-        letter-spacing:0.12em;text-transform:uppercase; }}
-    .hb-dot {{ width:7px;height:7px;border-radius:50%;background:#34D399;
-        box-shadow:0 0 9px #34D399;animation:sbcPulse 1.8s ease-in-out infinite; }}
-    .hb-title {{ font-family:'Space Grotesk',sans-serif!important;
-        font-size:29px;font-weight:700;color:white;margin:0 0 9px;
-        letter-spacing:-0.8px;line-height:1.05; }}
-    .hb-meta {{ display:flex;flex-wrap:wrap;gap:8px;margin:0 0 2px; }}
-    .hb-chip {{ display:inline-flex;align-items:center;gap:6px;
-        background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.13);
-        border-radius:9px;padding:5px 11px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.74); }}
-    .hb-chip b {{ color:#fff;font-weight:700; }}
-    .nav-lbl {{ font-size:9px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;
-        color:rgba(255,255,255,0.40);margin:3px 0 7px; }}
-    .st-key-hdrbanner [data-testid="stVerticalBlock"] {{ gap: 0.5rem !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button {{
-        position:relative; z-index:2; overflow:hidden; white-space:nowrap !important;
-        color:#CBD3F2 !important; border-radius:9px !important;
-        font-size:10px !important; font-weight:700 !important;
-        height:32px !important; min-height:32px !important; padding:0 11px !important;
-        border:1px solid rgba(255,255,255,0.12) !important; border-top-color:rgba(255,255,255,0.18) !important;
-        background:linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.025)) !important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -2px 6px -2px rgba(0,0,0,0.35), 0 4px 12px -8px rgba(8,3,24,0.60) !important;
-        transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, color .16s ease !important;
-    }}
-    .st-key-hdrbanner [data-testid="stButton"] > button p {{ white-space:nowrap !important; margin:0 !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button:hover {{
-        color:#EAF2FF !important; transform:translateY(-1px) !important;
-        border-color:rgba(125,211,252,0.42) !important;
-        background:linear-gradient(180deg, rgba(125,211,252,0.15), rgba(255,255,255,0.04)) !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"] {{
-        color:#F4F9FF !important; padding-left:20px !important;
-        border:1px solid rgba(56,189,248,0.55) !important; border-top-color:rgba(186,225,255,0.62) !important;
-        background:linear-gradient(180deg, rgba(56,189,248,0.30), rgba(59,130,246,0.16)) !important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 22px -10px rgba(56,189,248,0.50) !important; }}
-    .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"]::before {{
-        content:""; position:absolute; left:8px; top:50%; transform:translateY(-50%);
-        width:5px; height:5px; border-radius:50%; background:#7DD3FC; box-shadow:0 0 8px rgba(125,211,252,0.9); }}
-
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
     @keyframes sbcBar {{ 0% {{ background-position:0% 0%; }} 100% {{ background-position:200% 0%; }} }}
-
-    /* ── KPI cards ── */
-    .kpi-card {{
-        background: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);
-        border-radius: 20px; padding: 22px 22px 18px;
-        box-shadow: 0 20px 44px -18px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
-        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-        position: relative; overflow: hidden; min-height: 148px;
-        display: flex; flex-direction: column; justify-content: space-between;
-        border: 1px solid rgba(255,255,255,0.10);
-        transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
-    }}
-    .kpi-card:hover {{
-        transform: translateY(-6px); border-color: var(--kc, {COLOR_ACCENT});
-        box-shadow: 0 30px 60px -22px rgba(0,0,0,0.8), 0 0 36px -12px var(--kc, {COLOR_ACCENT}), inset 0 1px 0 rgba(255,255,255,0.10);
-    }}
-    .kpi-card::before {{ content:'';position:absolute;top:0;left:0;right:0;height:4px;
-        background:var(--kc, {COLOR_PRIMARY});box-shadow:0 0 18px -2px var(--kc, {COLOR_PRIMARY}); }}
-    .kpi-card::after {{ content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;
-        background:radial-gradient(circle,var(--kc, {COLOR_PRIMARY}),transparent 70%);opacity:0.22;border-radius:50%; }}
-    .kpi-bg-icon {{ position:absolute;bottom:12px;right:16px;font-size:46px;opacity:0.10;line-height:1;pointer-events:none;z-index:0; }}
-    .kpi-label {{ font-size:10px;color:rgba(255,255,255,0.50);font-weight:700;text-transform:uppercase;letter-spacing:0.10em;position:relative;z-index:1; }}
-    .kpi-value {{ font-family:'Space Grotesk',sans-serif!important;font-size:30px;font-weight:700;line-height:1.1;margin:10px 0 4px;position:relative;z-index:1;letter-spacing:-0.5px;text-shadow:0 2px 16px rgba(0,0,0,0.4); }}
-    .kpi-sub {{ font-size:11px;color:rgba(255,255,255,0.42);position:relative;z-index:1; }}
-    .kpi-bar-wrap {{ background:rgba(255,255,255,0.09);border-radius:99px;height:5px;margin-top:12px;overflow:hidden;position:relative;z-index:1; }}
-    .kpi-bar-fill {{ height:5px;border-radius:99px;box-shadow:0 0 10px -1px currentColor; }}
-
-    /* ── Section header ── */
-    .sec-header {{
-        background:
-            radial-gradient(ellipse at 12% 35%, rgba(255,255,255,0.18) 0%, transparent 55%),
-            radial-gradient(ellipse at 92% 135%, rgba(0,0,0,0.24) 0%, transparent 55%),
-            var(--sc, {COLOR_PRIMARY});
-        border-radius: 20px; padding: 22px 28px; margin: 34px 0 18px;
-        box-shadow: 0 18px 42px -12px rgba(15,23,42,0.45);
-        position: relative; overflow: hidden;
-        display: flex; align-items: center; gap: 18px;
-        border: 1px solid rgba(255,255,255,0.14);
-    }}
-    .sec-header::before {{ content:'';position:absolute;left:-25px;top:-35px;width:130px;height:130px;background:rgba(255,255,255,0.10);border-radius:50%; }}
-    .sec-header::after {{ content:'';position:absolute;right:-35px;bottom:-45px;width:150px;height:150px;background:rgba(255,255,255,0.07);border-radius:50%; }}
-    .sec-icon {{ width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:27px;flex-shrink:0;position:relative;z-index:1;
-        background:rgba(255,255,255,0.18) !important;border:1px solid rgba(255,255,255,0.28) !important;box-shadow:0 8px 18px -6px rgba(0,0,0,0.4); }}
-    .sec-text {{ flex:1;min-width:0;position:relative;z-index:1; }}
-    .sec-title {{ font-size:19px;font-weight:800;color:white;margin:0 0 5px 0;letter-spacing:-0.4px; }}
-    .sec-desc {{ font-size:12px;color:rgba(255,255,255,0.78);margin:0;line-height:1.6; }}
-    .sec-meta {{ text-align:center;flex-shrink:0;padding:9px 20px;background:rgba(255,255,255,0.96);border-radius:13px;border:1px solid rgba(255,255,255,0.5);box-shadow:0 6px 16px -6px rgba(0,0,0,0.3);position:relative;z-index:1; }}
-    .sec-meta-val {{ font-family:'Space Grotesk',sans-serif!important;font-size:24px;font-weight:700;line-height:1.1;margin-bottom:2px;letter-spacing:-0.5px; }}
-    .sec-meta-lab {{ font-size:9px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.08em; }}
-    .sec-tag {{ font-size:10px;font-weight:700;color:white;background:rgba(255,255,255,0.20);border:1px solid rgba(255,255,255,0.35);padding:5px 14px;border-radius:99px;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;align-self:flex-start;position:relative;z-index:1; }}
-
-    /* ── Chart mini-headers ── */
-    .chart-hdr {{ display:flex;align-items:center;gap:12px;padding:12px 16px;
-        background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
-        border-radius:14px;border:1px solid rgba(255,255,255,0.10);border-left:4px solid var(--cc, {COLOR_ACCENT});
-        box-shadow:0 8px 22px -10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);margin-bottom:12px; }}
-    .ch-icon {{ font-size:18px;line-height:1;flex-shrink:0;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12); }}
-    .ch-texts {{ flex:1;min-width:0; }}
-    .ch-title {{ font-size:13px;font-weight:800;color:#F1F4FF;margin:0 0 1px;letter-spacing:-0.2px; }}
-    .ch-sub {{ font-size:10.5px;color:rgba(255,255,255,0.45);margin:0; }}
-    .ch-tag {{ margin-left:auto;font-size:9px;font-weight:700;color:var(--cc, {COLOR_ACCENT});background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);padding:3px 9px;border-radius:99px;letter-spacing:0.05em;flex-shrink:0;text-transform:uppercase; }}
-
-    /* ── Table headers ── */
-    .tbl-hdr {{ padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:12px;margin-bottom:6px;box-shadow:0 4px 18px rgba(0,0,0,0.15);position:relative;overflow:hidden; }}
-    .tbl-hdr::before {{ content:'';position:absolute;left:-10px;top:-10px;width:60px;height:60px;background:rgba(255,255,255,0.08);border-radius:50%; }}
-    .tbl-hdr::after {{ content:'';position:absolute;right:-20px;bottom:-20px;width:80px;height:80px;background:rgba(255,255,255,0.10);border-radius:50%; }}
-    .tbl-hdr-icon {{ font-size:24px;flex-shrink:0;position:relative;z-index:1; }}
-    .tbl-hdr-body {{ flex:1;position:relative;z-index:1; }}
-    .tbl-hdr-title {{ font-size:14px;font-weight:800;color:white;margin:0 0 2px;letter-spacing:-0.2px; }}
-    .tbl-hdr-desc {{ font-size:11px;color:rgba(255,255,255,0.72);margin:0; }}
-    .tbl-hdr-badge {{ font-size:10px;font-weight:700;color:white;background:rgba(255,255,255,0.20);border:1px solid rgba(255,255,255,0.35);padding:4px 12px;border-radius:99px;flex-shrink:0;white-space:nowrap;position:relative;z-index:1; }}
 
     /* ── Plotly chart: tarjeta de vidrio oscuro ── */
     div[data-testid="stPlotlyChart"] {{
@@ -924,7 +1180,7 @@ st.markdown(f"""
         border: 1px solid rgba(255,255,255,0.09) !important; overflow: visible !important; padding: 10px !important;
     }}
 
-    /* ── Tabla Clasificación: HTML propio (mismo esquema que Avance vs. Meta) ── */
+    /* ── Tabla Clasificación / Evolución: HTML propio (mismo esquema que Avance vs. Meta) ── */
     .avance-tabla-wrap {{ overflow:auto;max-height:520px;border-radius:16px;border:1px solid rgba(255,255,255,0.10);
         box-shadow:0 20px 46px -18px rgba(0,0,0,0.7);background:rgba(6,15,11,0.55);margin-bottom:22px; }}
     .avance-tabla {{ width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap; }}
@@ -963,23 +1219,6 @@ st.markdown(f"""
     .evo-down {{ background:rgba(239,68,68,0.16);color:{COLOR_DANGER}; }}
     .evo-flat {{ background:rgba(148,163,184,0.16);color:#94A3B8; }}
     .evo-na {{ background:rgba(148,163,184,0.08);color:rgba(255,255,255,0.30); }}
-
-    /* ── Listas "Top" (rankings) ── */
-    .top-list {{ display:flex;flex-direction:column;gap:8px; }}
-    .top-row {{ display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:12px;
-        background:linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));
-        border:1px solid rgba(255,255,255,0.09);
-        transition:transform .2s ease,border-color .2s ease; }}
-    .top-row:hover {{ transform:translateX(4px);border-color:var(--ac); }}
-    .top-rank {{ font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:12px;
-        color:rgba(255,255,255,0.32);width:20px;flex-shrink:0; }}
-    .top-avatar {{ width:34px;height:34px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-        font-size:11.5px;font-weight:800;color:white;background:var(--ac);
-        box-shadow:0 4px 12px -3px var(--ac); }}
-    .top-body {{ flex:1;min-width:0; }}
-    .top-name {{ font-size:12.5px;font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-meta {{ font-size:10.5px;color:rgba(255,255,255,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
-    .top-value {{ flex-shrink:0;font-family:'Space Grotesk',sans-serif!important;font-weight:800;font-size:14px; }}
 
     /* ── Sidebar base ── */
     section[data-testid="stSidebar"] > div:first-child {{
@@ -1056,50 +1295,13 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# NAVEGACIÓN + ENCABEZADO
-# ─────────────────────────────────────────────
-_home_pg = st.Page("home.py", title="Inicio", icon="🏠", default=True)
-_insc_pg = st.Page("pages/1_Inscripciones.py", title="Inscripciones", icon="📝")
-_mat_pg = st.Page("pages/2_Matriculas.py", title="Matrículas", icon="🎓")
-_cont_pg = st.Page("pages/4_Contactabilidad.py", title="Real time", icon="📞")
-
-_chip_corte = (
-    f"<span class='hb-chip'>✂️ {mes_corte} hasta el día <b>{dia_corte}</b></span>"
-    if dia_corte is not None else ""
-)
-with st.container(key="hdrbanner"):
-    st.markdown(f"""
-    <div class='hb-eyebrow'><span class='hb-dot'></span>Centro de Control · Uniminuto 2026</div>
-    <div class='hb-title'>Módulo de Cuartiles</div>
-    <div class='hb-meta'>
-        <span class='hb-chip'>📅 Mes <b>{mes_sel or "—"}</b></span>
-        <span class='hb-chip'>🧭 Basado en volumen de Matrículas</span>
-        {_chip_corte}
-    </div>
-    <div class='nav-lbl'>⚡ Navegación</div>
-    """, unsafe_allow_html=True)
-    nb1, nb2, nb3, nb4, nb5, _nsp = st.columns([1.0, 1.35, 1.3, 1.35, 1.2, 1.0], vertical_alignment="center")
-    with nb1:
-        if st.button("🏠 Inicio", key="hdr_home", width="stretch"):
-            st.switch_page(_home_pg)
-    with nb2:
-        if st.button("📝 Inscripciones", key="hdr_insc", width="stretch"):
-            st.switch_page(_insc_pg)
-    with nb3:
-        if st.button("🎓 Matrículas", key="hdr_mat", width="stretch"):
-            st.switch_page(_mat_pg)
-    with nb4:
-        st.button("🏆 Cuartiles", key="hdr_cuart", width="stretch", type="primary")
-    with nb5:
-        if st.button("📞 Real time", key="hdr_cont", width="stretch"):
-            st.switch_page(_cont_pg)
-
 if not mes_sel:
     st.stop()
 
 tabla_mes = tabla_mes_full
 tabla_vista = tabla_mes
+if coord_sel != "Todos":
+    tabla_vista = tabla_vista[tabla_vista["COORDINADOR"] == coord_sel]
 if sup_sel != "Todos":
     tabla_vista = tabla_vista[tabla_vista["SUPERVISOR"] == sup_sel]
 if exp_sel != "Todos":
@@ -1109,62 +1311,6 @@ _es_todos = mes_sel == "Todos"
 _n_ventana = len(_MESES_VENTANA)
 _periodo_lbl = "el total de los últimos 6 meses" if _es_todos else mes_sel
 _mes_lbl = "Total 6 meses" if _es_todos else mes_sel
-
-# ─────────────────────────────────────────────
-# KPIs
-# ─────────────────────────────────────────────
-def kpi_bar(pct, color, max_val=100):
-    fill = min(pct / max_val * 100, 100) if max_val else 0
-    return f"<div class='kpi-bar-wrap'><div class='kpi-bar-fill' style='width:{fill:.0f}%;background:{color};'></div></div>"
-
-
-total_asesores = len(tabla_mes)
-n_q1 = int((tabla_mes["CUARTIL"] == "Q1").sum())
-n_q4 = int((tabla_mes["CUARTIL"] == "Q4").sum())
-cumpl_prom_mat = tabla_mes["CUMPL_MAT"].mean() if total_asesores else 0.0
-color_cumpl = COLOR_SUCCESS if cumpl_prom_mat >= 100 else (COLOR_WARNING if cumpl_prom_mat >= 70 else COLOR_DANGER)
-
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_ACCENT}'>
-        <div class='kpi-bg-icon'>👥</div>
-        <div>
-            <div class='kpi-label'>Total asesores</div>
-            <div class='kpi-value' style='color:#7DD3FC'>{total_asesores}</div>
-            <div class='kpi-sub'>cuartilizados · {_mes_lbl}</div>
-        </div>
-        {kpi_bar(total_asesores, COLOR_ACCENT, max(total_asesores, 1))}
-    </div>""", unsafe_allow_html=True)
-with k2:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_DANGER}'>
-        <div class='kpi-bg-icon'>⚠️</div>
-        <div>
-            <div class='kpi-label'>Asesores en Q1</div>
-            <div class='kpi-value' style='color:{COLOR_DANGER}'>{n_q1}</div>
-            <div class='kpi-sub'>25% de menor volumen de matrículas</div>
-        </div>
-        {kpi_bar(n_q1, COLOR_DANGER, max(total_asesores, 1))}
-    </div>""", unsafe_allow_html=True)
-with k3:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_SUCCESS}'>
-        <div class='kpi-bg-icon'>🏆</div>
-        <div>
-            <div class='kpi-label'>Asesores en Q4</div>
-            <div class='kpi-value' style='color:{COLOR_SUCCESS}'>{n_q4}</div>
-            <div class='kpi-sub'>25% de mayor volumen de matrículas</div>
-        </div>
-        {kpi_bar(n_q4, COLOR_SUCCESS, max(total_asesores, 1))}
-    </div>""", unsafe_allow_html=True)
-with k4:
-    st.markdown(f"""<div class='kpi-card' style='--kc:{color_cumpl}'>
-        <div class='kpi-bg-icon'>🎯</div>
-        <div>
-            <div class='kpi-label'>Cumplimiento promedio</div>
-            <div class='kpi-value' style='color:{color_cumpl}'>{cumpl_prom_mat:.0f}%</div>
-            <div class='kpi-sub'>meta de matrículas, todos los asesores</div>
-        </div>
-        {kpi_bar(cumpl_prom_mat, color_cumpl)}
-    </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # UMBRALES DE CUARTIL — real vs propuesto (mes seleccionado)
@@ -1178,27 +1324,11 @@ if _es_todos and len(_umbral_base):
         _umbral_base[_c] = _umbral_base[_c] / _n_ventana
     _umbral_lbl = "promedio mensual (6 meses)"
 
-st.markdown(f"""
-<div class='sec-header' style='--sc:#0EA5E9'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📐</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Umbrales de Cuartil — {_umbral_lbl}</div>
-        <div class='sec-desc'>Dónde caen los cortes reales de cada cuartil (por mes) frente al objetivo propuesto. Matrículas usa un propuesto fijo; inscripciones usa el umbral real del cuartil siguiente.</div>
-    </div>
-    <span class='sec-tag' style='background:#0EA5E9'>Calibración</span>
-</div>
-""", unsafe_allow_html=True)
-
 _umbral_mat = _tabla_umbrales(_umbral_base, "REAL_MAT", "CUARTIL", _PROPUESTO_MAT)
 _umbral_insc = _tabla_umbrales(_umbral_base, "REAL_INSC", "CUARTIL_INSC")
-_uc1, _uc2 = st.columns(2)
-with _uc1:
-    _render_tabla_umbrales(_umbral_mat, "Matrículas", "🎓", "Propuesto fijo · Q1 6,5 · Q2 9,5 · Q3 13 · Q4 39,5")
-with _uc2:
-    _render_tabla_umbrales(_umbral_insc, "Inscripciones", "📝", "Propuesto = umbral real del cuartil siguiente")
 
 # ─────────────────────────────────────────────
-# EVOLUCIÓN RECIENTE (VENTANA DE 6 MESES) — primera tabla del módulo
+# EVOLUCIÓN RECIENTE (VENTANA DE 6 MESES)
 # ─────────────────────────────────────────────
 # La ventana termina en el mes seleccionado en el filtro "Mes" (y sus 5 meses previos).
 # Con "Todos" se muestran los últimos 6 meses disponibles.
@@ -1208,179 +1338,20 @@ if _es_todos:
 else:
     _idx_sel = meses_disponibles.index(mes_sel)
     _ventana_evol = meses_disponibles[max(0, _idx_sel - _N_MESES_EVOLUCION + 1): _idx_sel + 1]
-_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(
-    tuple(_ventana_evol), mes_corte, dia_corte)
+_filas_evolucion, _meses_evolucion = _tabla_evolucion_reciente(tuple(_ventana_evol), mes_corte, dia_corte)
+if coord_sel != "Todos":
+    _filas_evolucion = [f for f in _filas_evolucion if f["COORDINADOR"] == coord_sel]
 if sup_sel != "Todos":
     _filas_evolucion = [f for f in _filas_evolucion if f["SUPERVISOR"] == sup_sel]
 if exp_sel != "Todos":
     _filas_evolucion = [f for f in _filas_evolucion if f["ASESOR"] == exp_sel]
-_n_ev = len(_meses_evolucion)
 
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_ACCENT}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(14,165,233,0.20),rgba(14,165,233,0.06))'>📈</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Evolución Reciente</div>
-        <div class='sec-desc'>Matrículas e inscripciones de cada asesor en {", ".join(_meses_evolucion) if _meses_evolucion else "los últimos meses"}, con su cuartil por cada métrica — y un cuartil consolidado sobre el promedio mensual de los {_n_ev} meses.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_ACCENT}'>{len(_filas_evolucion)} asesores</span>
-</div>
-""", unsafe_allow_html=True)
-
-if _filas_evolucion:
-    _render_tabla_evolucion(_filas_evolucion, _meses_evolucion)
-    _export_evolucion = _df_evolucion_export(_filas_evolucion, _meses_evolucion)
-    _b64_evolucion = base64.b64encode(_excel_bytes(_export_evolucion)).decode()
-    st.markdown(
-        f'<div style="text-align:right;margin-top:-6px;margin-bottom:8px">'
-        f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{_b64_evolucion}" '
-        f'download="evolucion_reciente.xlsx" '
-        f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
-        f'↓ Exportar Excel</a></div>',
-        unsafe_allow_html=True,
-    )
-else:
-    st.caption("Sin histórico suficiente para mostrar la evolución.")
-
-# ─────────────────────────────────────────────
-# DISTRIBUCIÓN DEL CUARTIL CONSOLIDADO POR SUPERVISOR
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:#818CF8'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(129,140,248,0.20),rgba(129,140,248,0.06))'>🧭</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Cuartil de Matrículas por Supervisor</div>
-        <div class='sec-desc'>Cuántos asesores de cada supervisor caen en cada cuartil de matrículas — según {_periodo_lbl}.</div>
-    </div>
-    <span class='sec-tag' style='background:#818CF8'>Distribución</span>
-</div>
-""", unsafe_allow_html=True)
-if len(tabla_vista):
-    st.plotly_chart(_fig_cuartil_supervisor(tabla_vista[["SUPERVISOR", "CUARTIL"]]), width="stretch", config={"displayModeBar": False})
-else:
-    st.caption("Sin datos para esta gráfica.")
-
-# ─────────────────────────────────────────────
-# ANÁLISIS DE CUARTILES
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#F59E0B'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(245,158,11,0.20),rgba(245,158,11,0.06))'>🔬</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Análisis de Cuartiles</div>
-        <div class='sec-desc'>Movilidad entre cuartiles, embudo por nivel, cumplimiento de meta y eficiencia por asesor.</div>
-    </div>
-    <span class='sec-tag' style='background:#F59E0B'>Diagnóstico</span>
-</div>
-""", unsafe_allow_html=True)
-
-_ac1, _ac2 = st.columns(2)
-with _ac1:
-    st.markdown("<div class='chart-hdr' style='--cc:#818CF8'><span class='ch-icon'>🔀</span><div class='ch-texts'>"
-                "<div class='ch-title'>Movilidad de cuartil</div><div class='ch-sub'>Cuartil al inicio → al final de los 6 meses</div></div></div>",
-                unsafe_allow_html=True)
-    if _filas_evolucion:
-        st.plotly_chart(_fig_movilidad(_filas_evolucion), width="stretch", config={"displayModeBar": False})
-    else:
-        st.caption("Sin histórico suficiente.")
-with _ac2:
-    st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>🎯</span><div class='ch-texts'>"
-                "<div class='ch-title'>Cumplimiento de meta por cuartil</div><div class='ch-sub'>Promedio de % de meta alcanzado</div></div></div>",
-                unsafe_allow_html=True)
-    if len(tabla_vista):
-        st.plotly_chart(_fig_cumpl_cuartil(tabla_vista), width="stretch", config={"displayModeBar": False})
-    else:
-        st.caption("Sin datos.")
-
-_ac3, _ac4 = st.columns(2)
-with _ac3:
-    st.markdown("<div class='chart-hdr' style='--cc:#34D399'><span class='ch-icon'>📊</span><div class='ch-texts'>"
-                "<div class='ch-title'>Inscripción → Matrícula por cuartil</div><div class='ch-sub'>Promedio por asesor de cada grupo</div></div></div>",
-                unsafe_allow_html=True)
-    if len(tabla_vista):
-        st.plotly_chart(_fig_embudo_cuartil(tabla_vista), width="stretch", config={"displayModeBar": False})
-    else:
-        st.caption("Sin datos.")
-with _ac4:
-    st.markdown("<div class='chart-hdr' style='--cc:#F59E0B'><span class='ch-icon'>✨</span><div class='ch-texts'>"
-                "<div class='ch-title'>Inscripciones vs Matrículas</div><div class='ch-sub'>Cada punto es un asesor · color = cuartil</div></div></div>",
-                unsafe_allow_html=True)
-    if len(tabla_vista):
-        st.plotly_chart(_fig_scatter_insc_mat(tabla_vista), width="stretch", config={"displayModeBar": False})
-    else:
-        st.caption("Sin datos.")
-
-# ─────────────────────────────────────────────
-# CLASIFICACIÓN DE ASESORES
-# ─────────────────────────────────────────────
-st.markdown(f"""
-<div class='sec-header' style='--sc:{COLOR_PRIMARY}'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(52,211,153,0.20),rgba(52,211,153,0.06))'>🏆</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Clasificación de Asesores</div>
-        <div class='sec-desc'>Meta y real de inscripciones y matrículas por asesor, con su cuartil de desempeño del mes.</div>
-    </div>
-    <span class='sec-tag' style='background:{COLOR_PRIMARY}'>Q1 = menor volumen · Q4 = mayor volumen</span>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
-    <span class='tbl-hdr-icon'>📋</span>
-    <div class='tbl-hdr-body'>
-        <div class='tbl-hdr-title'>Asesores — {_mes_lbl}</div>
-        <div class='tbl-hdr-desc'>Ordenado por matrículas reales, de mayor a menor</div>
-    </div>
-    <span class='tbl-hdr-badge'>{len(tabla_vista)} asesores</span>
-</div>""", unsafe_allow_html=True)
-_render_tabla_clasificacion(tabla_vista)
-
-_export = tabla_vista.rename(columns={
-    "ASESOR": "ASESOR", "SUPERVISOR": "SUPERVISOR",
-    "META_INSC": "META INSCRIPCIONES", "META_MAT": "META MATRICULAS",
-    "REAL_INSC": "INSCRIPCIONES", "REAL_MAT": "MATRICULAS", "INSUMO": "INSUMO (LEADS)",
-    "CUMPL_INSC": "CUMPLIMIENTO INSCRIPCIONES %", "CUMPL_MAT": "CUMPLIMIENTO MATRICULAS %",
-    "CUARTIL": "CUARTIL",
-})
-b64 = base64.b64encode(_excel_bytes(_export)).decode()
-st.markdown(
-    f'<div style="text-align:right;margin-top:-14px;margin-bottom:8px">'
-    f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" '
-    f'download="cuartiles_{mes_sel.lower()}.xlsx" '
-    f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em">'
-    f'↓ Exportar Excel</a></div>',
-    unsafe_allow_html=True,
+# Vista Executive BI integrada en esta página.
+render(
+    tabla_mes=tabla_mes, tabla_vista=tabla_vista,
+    filas_evolucion=_filas_evolucion, meses_evolucion=_meses_evolucion,
+    umbral_mat=_umbral_mat, umbral_insc=_umbral_insc, umbral_lbl=_umbral_lbl,
+    mes_sel=mes_sel, mes_corte=mes_corte, dia_corte=dia_corte,
+    mes_lbl=_mes_lbl, periodo_lbl=_periodo_lbl,
 )
-
-# ─────────────────────────────────────────────
-# TOP 10 Y ÚLTIMOS 10 DEL MES
-# ─────────────────────────────────────────────
-st.markdown("""
-<div class='sec-header' style='--sc:#F59E0B'>
-    <div class='sec-icon' style='background:linear-gradient(135deg,rgba(245,158,11,0.20),rgba(245,158,11,0.06))'>🏅</div>
-    <div class='sec-text'>
-        <div class='sec-title'>Top 10 y Últimos 10</div>
-        <div class='sec-desc'>Extremos de desempeño del mes por volumen de matrículas.</div>
-    </div>
-    <span class='sec-tag' style='background:#F59E0B'>Ranking</span>
-</div>
-""", unsafe_allow_html=True)
-
-_top10 = tabla_mes.sort_values("REAL_MAT", ascending=False).head(10)
-_ultimos10 = tabla_mes.sort_values("REAL_MAT", ascending=True).head(10)
-
-tcol1, tcol2 = st.columns(2)
-with tcol1:
-    st.markdown("""<div class='chart-hdr' style='--cc:#34D399'>
-        <span class='ch-icon'>🥇</span>
-        <div class='ch-texts'><div class='ch-title'>Top 10 asesores</div><div class='ch-sub'>Más matrículas del mes</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [(row["ASESOR"], row["SUPERVISOR"], f"{int(row['REAL_MAT'])}") for _, row in _top10.iterrows()]
-    st.markdown(_top_lista_html(_filas, COLOR_SUCCESS), unsafe_allow_html=True)
-with tcol2:
-    st.markdown(f"""<div class='chart-hdr' style='--cc:{COLOR_DANGER}'>
-        <span class='ch-icon'>⚠️</span>
-        <div class='ch-texts'><div class='ch-title'>Últimos 10 asesores</div><div class='ch-sub'>Menos matrículas del mes</div></div>
-    </div>""", unsafe_allow_html=True)
-    _filas = [(row["ASESOR"], row["SUPERVISOR"], f"{int(row['REAL_MAT'])}") for _, row in _ultimos10.iterrows()]
-    st.markdown(_top_lista_html(_filas, COLOR_DANGER), unsafe_allow_html=True)
-
+st.stop()
