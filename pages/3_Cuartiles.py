@@ -62,32 +62,31 @@ def _tabla_umbrales(df: pd.DataFrame, col_valor: str, col_cuartil: str, propuest
 
 _UMBRAL_CSS = """
 <style>
-.umb-panel{position:relative;border-radius:20px;padding:18px 18px 14px;
-  background:linear-gradient(160deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.02) 100%);
-  border:1px solid rgba(255,255,255,0.10);
-  box-shadow:0 18px 44px -20px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.07);}
-.umb-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
-.umb-ico{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
-  font-size:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);}
-.umb-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#fff;letter-spacing:-0.2px;}
-.umb-sub{font-size:10px;color:rgba(255,255,255,0.40);margin-top:1px;}
-.umb-row{display:grid;grid-template-columns:44px 1fr 1fr 1fr;gap:10px;align-items:center;
-  padding:11px 12px;border-radius:13px;margin-bottom:8px;
-  background:linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));
-  border:1px solid rgba(255,255,255,0.08);border-left:3px solid var(--q);}
+.umb-panel{position:relative;border-radius:16px;padding:11px 13px 9px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%);
+  border:1px solid rgba(255,255,255,0.09);
+  box-shadow:0 12px 30px -20px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.06);}
+.umb-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.umb-ico{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);flex-shrink:0;}
+.umb-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:12px;color:#fff;letter-spacing:-0.1px;}
+.umb-sub{font-size:8.5px;color:rgba(255,255,255,0.38);margin-top:0;}
+.umb-row{display:grid;grid-template-columns:26px 1fr 1fr 1fr 96px;gap:7px;align-items:center;
+  padding:5px 8px;border-radius:9px;margin-bottom:3px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.045),rgba(255,255,255,0.012));
+  border:1px solid rgba(255,255,255,0.06);border-left:2px solid var(--q);}
 .umb-row:last-child{margin-bottom:0;}
-.umb-q{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:14px;color:var(--q);
+.umb-q{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:11px;color:var(--q);
   text-align:center;}
-.umb-cell{text-align:center;}
-.umb-cell .lbl{display:block;font-size:8px;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;
-  color:rgba(255,255,255,0.32);margin-bottom:3px;}
-.umb-cell .val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:rgba(255,255,255,0.92);}
+.umb-cell{text-align:center;line-height:1.15;}
+.umb-cell .lbl{display:block;font-size:6.5px;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;
+  color:rgba(255,255,255,0.30);}
+.umb-cell .val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:11px;color:rgba(255,255,255,0.92);}
 .umb-cell.prop .val{color:#7DD3FC;}
-.umb-bar-row{grid-column:1 / -1;display:flex;align-items:center;gap:9px;margin-top:8px;}
-.umb-bar-track{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,0.10);overflow:hidden;}
-.umb-bar-fill{height:100%;border-radius:99px;box-shadow:0 0 8px -1px currentColor;}
-.umb-pct{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:12px;min-width:38px;text-align:right;}
-.umb-pct .cap{font-size:8px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:0.06em;margin-right:6px;text-transform:uppercase;}
+.umb-bar-row{display:flex;align-items:center;gap:5px;}
+.umb-bar-track{flex:1;height:4px;border-radius:99px;background:rgba(255,255,255,0.10);overflow:hidden;}
+.umb-bar-fill{height:100%;border-radius:99px;box-shadow:0 0 6px -1px currentColor;}
+.umb-pct{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:10px;min-width:30px;text-align:right;}
 </style>
 """
 
@@ -110,10 +109,10 @@ def _render_tabla_umbrales(t: pd.DataFrame, titulo: str, icono: str, sub: str) -
             f"<div class='umb-q'>{q}</div>"
             f"<div class='umb-cell'><span class='lbl'>Foto</span><span class='val'>{foto}</span></div>"
             f"<div class='umb-cell'><span class='lbl'>Real</span><span class='val'>{_n(r['REAL'])}</span></div>"
-            f"<div class='umb-cell prop'><span class='lbl'>Propuesto</span><span class='val'>{_n(r['PROPUESTO'])}</span></div>"
+            f"<div class='umb-cell prop'><span class='lbl'>Prop.</span><span class='val'>{_n(r['PROPUESTO'])}</span></div>"
             f"<div class='umb-bar-row'>"
             f"<div class='umb-bar-track'><div class='umb-bar-fill' style='width:{min(pct,100):.0f}%;background:{cpct}'></div></div>"
-            f"<span class='umb-pct' style='color:{cpct}'><span class='cap'>cumpl</span>{pct:.0f}%</span>"
+            f"<span class='umb-pct' style='color:{cpct}'>{pct:.0f}%</span>"
             f"</div></div>"
         )
     st.markdown(
@@ -560,40 +559,131 @@ _AXIS = dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="
 _LEGEND = dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10, color="rgba(255,255,255,0.58)"), bgcolor="rgba(0,0,0,0)")
 
 
-def _fig_cuartil_stack(tabla: pd.DataFrame, group_col: str) -> go.Figure:
-    grp = tabla.groupby([group_col, "CUARTIL"]).size().unstack(fill_value=0)
+def _rgba_hex(hex_color: str, alpha: float) -> str:
+    v = hex_color.lstrip("#")
+    r, g, b = (int(v[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _render_cuartil_stack(tabla: pd.DataFrame, group_col: str, key: str) -> None:
+    if not len(tabla):
+        st.caption("Sin datos para esta gráfica."); return
+    c1, c2 = st.columns(2)
+    with c1:
+        vista = st.selectbox("Ver como", ["Conteo de asesores", "% del equipo"], key=f"{key}_vista")
+    with c2:
+        orden = st.selectbox("Ordenar por", ["Mayor volumen", "Alfabético", "Mayor % en Q1", "Mayor % en Q4"], key=f"{key}_orden")
+    grp = tabla.groupby(group_col)["CUARTIL"].value_counts().unstack(fill_value=0)
     for q in _ORDEN_Q:
         if q not in grp.columns:
             grp[q] = 0
     grp = grp[_ORDEN_Q]
-    grp = grp.loc[grp.sum(axis=1).sort_values().index]
-
+    total = grp.sum(axis=1)
+    pct = grp.div(total.replace(0, 1), axis=0) * 100
+    if orden == "Mayor volumen":
+        order_idx = total.sort_values().index
+    elif orden == "Alfabético":
+        order_idx = pd.Index(sorted(grp.index, reverse=True))
+    elif orden == "Mayor % en Q1":
+        order_idx = pct["Q1"].sort_values().index
+    else:
+        order_idx = pct["Q4"].sort_values().index
+    grp, pct = grp.loc[order_idx], pct.loc[order_idx]
+    fuente = pct if vista == "% del equipo" else grp
     fig = go.Figure()
     for q in _ORDEN_Q:
+        custom = np.column_stack([grp[q], pct[q]])
         fig.add_trace(go.Bar(
-            y=grp.index, x=grp[q], orientation="h", name=q,
-            marker=dict(color=_COLOR_CUARTIL[q]),
+            y=fuente.index, x=fuente[q], orientation="h", name=q, marker=dict(color=_COLOR_CUARTIL[q]),
+            customdata=custom,
+            hovertemplate=f"<b>%{{y}}</b><br>{q}: %{{customdata[0]:.0f}} asesores (%{{customdata[1]:.0f}}%)<extra></extra>",
         ))
     fig.update_layout(
         barmode="stack", height=max(280, len(grp) * 26 + 60), margin=dict(l=10, r=20, t=10, b=10),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"),
-        legend=_LEGEND,
+        font=dict(family="Inter", size=11, color="rgba(255,255,255,0.72)"), legend=_LEGEND,
         xaxis=dict(gridcolor="rgba(255,255,255,0.06)", tickfont=dict(size=10, family="Inter", color="rgba(255,255,255,0.55)"),
-                   automargin=True),
+                   automargin=True, ticksuffix="%" if vista == "% del equipo" else ""),
         yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11, family="Inter", color="rgba(255,255,255,0.75)"),
                    automargin=True),
+    )
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def _fig_movilidad_sankey(filas: list[dict], meses_recientes: list[str]) -> go.Figure | None:
+    """Flujo de asesores entre cuartiles a lo largo de TODA la ventana de meses
+    (no solo inicio→fin): una columna de nodos por mes, un enlace por cada
+    transición de cuartil observada entre dos meses consecutivos."""
+    n = len(meses_recientes)
+    node_index: dict[tuple, int] = {}
+    labels, colors, x_pos, y_pos = [], [], [], []
+    for mi, mes in enumerate(meses_recientes):
+        for qi, q in enumerate(_ORDEN_Q):
+            node_index[(mi, q)] = len(labels)
+            labels.append(f"{mes[:3]} · {q}")
+            colors.append(_COLOR_CUARTIL[q])
+            x_pos.append(0.001 + mi * (0.998 / max(n - 1, 1)))
+            y_pos.append(0.04 + qi * 0.30)
+
+    flows: dict[tuple, int] = {}
+    for f in filas:
+        meses_data = f["MESES"]
+        for mi in range(n - 1):
+            m1, m2 = meses_data[mi], meses_data[mi + 1]
+            if m1 and m2:
+                k = (node_index[(mi, m1["CUARTIL"])], node_index[(mi + 1, m2["CUARTIL"])])
+                flows[k] = flows.get(k, 0) + 1
+    if not flows:
+        return None
+
+    fig = go.Figure(go.Sankey(
+        arrangement="fixed",
+        node=dict(
+            label=labels, color=colors, x=x_pos, y=y_pos, pad=9, thickness=13,
+            line=dict(color="rgba(255,255,255,.18)", width=.6),
+            hovertemplate="%{label}: %{value} asesores<extra></extra>",
+        ),
+        link=dict(
+            source=[s for s, _ in flows], target=[t for _, t in flows], value=list(flows.values()),
+            color=[_rgba_hex(colors[s], .30) for s, _ in flows],
+            hovertemplate="%{source.label} → %{target.label}<br>%{value} asesores<extra></extra>",
+        ),
+    ))
+    fig.update_layout(
+        height=460, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter", size=10, color="rgba(255,255,255,.80)"),
+        margin=dict(l=6, r=6, t=10, b=6),
     )
     return fig
 
 
-def _render_movilidad(filas: list[dict]) -> None:
-    """Heatmap 4x4: cuartil del primer mes con dato vs cuartil del último — mide
-    movilidad. Clic en una celda muestra quiénes hicieron esa transición."""
+def _render_movilidad(filas: list[dict], meses_recientes: list[str]) -> None:
+    """Vista de flujo completo (Sankey, mes a mes) o resumen inicio→fin
+    (heatmap 4x4 con clic para ver quiénes)."""
+    c1, c2 = st.columns([1.3, 1])
+    with c1:
+        vista = st.selectbox("Vista", ["Flujo completo (Sankey)", "Inicio → Fin (matriz)"], key="cuart_mov_vista")
+    with c2:
+        grupos = sorted({f["SUPERVISOR"] for f in filas if f["SUPERVISOR"] != "Sin asignar"})
+        sup_local = st.selectbox("Supervisor", ["Todos"] + grupos, key="cuart_mov_sup")
+    filas_f = filas if sup_local == "Todos" else [f for f in filas if f["SUPERVISOR"] == sup_local]
+    if not filas_f:
+        st.caption("Sin datos para esta selección."); return
+
+    if vista.startswith("Flujo"):
+        if len(meses_recientes) < 2:
+            st.caption("Se necesitan al menos 2 meses para ver el flujo."); return
+        fig = _fig_movilidad_sankey(filas_f, meses_recientes)
+        if fig is None:
+            st.caption("Sin trayectorias suficientes para dibujar el flujo."); return
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.caption("Cada columna es un mes; el grosor del enlace es la cantidad de asesores que hicieron esa transición de cuartil.")
+        return
+
     idx = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
     M = [[0] * 4 for _ in range(4)]
     quien: dict[tuple, list[str]] = {}
-    for f in filas:
+    for f in filas_f:
         qs = [m["CUARTIL"] for m in f["MESES"] if m]
         if len(qs) >= 2:
             i, j = idx[qs[0]], idx[qs[-1]]
@@ -607,7 +697,7 @@ def _render_movilidad(filas: list[dict]) -> None:
         hovertemplate="De %{y} a %{x}: %{z} asesores<extra></extra>",
     ))
     fig.update_layout(
-        **{**_LAYOUT_BASE, "height": 440, "margin": dict(l=70, r=25, t=20, b=55)},
+        **{**_LAYOUT_BASE, "height": 420, "margin": dict(l=70, r=25, t=20, b=55)},
         xaxis=dict(title="Cuartil al final", tickfont=dict(size=12, color="rgba(255,255,255,0.75)")),
         yaxis=dict(title="Cuartil al inicio", autorange="reversed", tickfont=dict(size=12, color="rgba(255,255,255,0.75)")),
     )
@@ -622,9 +712,23 @@ def _render_movilidad(filas: list[dict]) -> None:
         pass
 
 
-def _fig_embudo_insumo(tabla: pd.DataFrame) -> go.Figure:
-    """Embudo de 3 etapas por cuartil: Insumo (leads) → Inscripción → Matrícula."""
-    g = tabla.groupby("CUARTIL")[["INSUMO", "REAL_INSC", "REAL_MAT"]].mean().reindex(_ORDEN_Q).fillna(0)
+def _render_embudo_insumo(tabla: pd.DataFrame) -> None:
+    """Embudo Insumo (leads) → Inscripción → Matrícula, agrupable por cuartil,
+    supervisor o coordinador."""
+    if not len(tabla):
+        st.caption("Sin datos."); return
+    c1, c2 = st.columns(2)
+    with c1:
+        agrupar = st.selectbox("Agrupar por", ["Cuartil", "Supervisor", "Coordinador"], key="cuart_emb_group")
+    with c2:
+        vista = st.selectbox("Vista", ["Promedio por asesor", "Total del grupo"], key="cuart_emb_vista")
+    col = {"Cuartil": "CUARTIL", "Supervisor": "SUPERVISOR", "Coordinador": "COORDINADOR"}[agrupar]
+    agg = "mean" if vista == "Promedio por asesor" else "sum"
+    g = tabla.groupby(col)[["INSUMO", "REAL_INSC", "REAL_MAT"]].agg(agg)
+    if col == "CUARTIL":
+        g = g.reindex(_ORDEN_Q).fillna(0)
+    else:
+        g = g[g.index != "Sin asignar"].sort_values("REAL_MAT", ascending=False).head(15)
     fig = go.Figure()
     fig.add_bar(x=g.index, y=g["INSUMO"], name="Insumo (leads)", marker_color=_INDIGO,
                 text=[f"{v:.1f}" for v in g["INSUMO"]], textposition="outside")
@@ -634,20 +738,49 @@ def _fig_embudo_insumo(tabla: pd.DataFrame) -> go.Figure:
                 text=[f"{v:.1f}" for v in g["REAL_MAT"]], textposition="outside")
     fig.update_layout(
         barmode="group", **_LAYOUT_BASE, legend=_LEGEND,
-        xaxis=dict(tickfont=dict(size=11, color="rgba(255,255,255,0.75)")), yaxis=_AXIS,
+        xaxis=dict(tickfont=dict(size=10, color="rgba(255,255,255,0.75)")), yaxis=_AXIS,
     )
-    return fig
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
-def _fig_scatter_insc_mat(tabla: pd.DataFrame) -> go.Figure:
+def _render_scatter_insc_mat(tabla: pd.DataFrame) -> None:
+    """Inscripciones vs Matrículas por asesor, con color y tamaño configurables."""
+    if not len(tabla):
+        st.caption("Sin datos."); return
+    c1, c2 = st.columns(2)
+    with c1:
+        color_por = st.selectbox("Color por", ["Cuartil", "Supervisor", "Coordinador"], key="cuart_sc_color")
+    with c2:
+        tam_por = st.selectbox("Tamaño del punto", ["Igual", "Insumo", "Cumplimiento Mat."], key="cuart_sc_size")
+
+    if tam_por == "Insumo":
+        tam_serie = tabla["INSUMO"].astype(float)
+    elif tam_por == "Cumplimiento Mat.":
+        tam_serie = tabla["CUMPL_MAT"].astype(float)
+    else:
+        tam_serie = None
+    sizeref = (2.0 * max(float(tam_serie.max()), 1.0) / (20.0 ** 2)) if tam_serie is not None else None
+
+    color_col = {"Cuartil": "CUARTIL", "Supervisor": "SUPERVISOR", "Coordinador": "COORDINADOR"}[color_por]
+    if color_col == "CUARTIL":
+        grupos, color_map = _ORDEN_Q, _COLOR_CUARTIL
+    else:
+        grupos = sorted(x for x in tabla[color_col].unique() if x != "Sin asignar")
+        palette = [COLOR_ACCENT, COLOR_SUCCESS, _INDIGO, COLOR_WARNING, COLOR_DANGER, "#2DD4BF", "#F472B6", "#FB923C"]
+        color_map = {g: palette[i % len(palette)] for i, g in enumerate(grupos)}
+
     fig = go.Figure()
-    for q in _ORDEN_Q:
-        d = tabla[tabla["CUARTIL"] == q]
+    for g in grupos:
+        d = tabla[tabla[color_col] == g]
         if not len(d):
             continue
+        marker = dict(color=color_map[g], line=dict(color="rgba(8,6,15,0.5)", width=1))
+        if tam_serie is not None:
+            marker.update(size=tam_serie.loc[d.index], sizemode="area", sizeref=sizeref, sizemin=4)
+        else:
+            marker["size"] = 8
         fig.add_scatter(
-            x=d["REAL_INSC"], y=d["REAL_MAT"], mode="markers", name=q,
-            marker=dict(color=_COLOR_CUARTIL[q], size=8, line=dict(color="rgba(8,6,15,0.5)", width=1)),
+            x=d["REAL_INSC"], y=d["REAL_MAT"], mode="markers", name=str(g), marker=marker,
             text=d["ASESOR"], hovertemplate="<b>%{text}</b><br>Insc: %{x}<br>Mat: %{y}<extra></extra>",
         )
     x = tabla["REAL_INSC"].to_numpy(dtype=float)
@@ -663,7 +796,7 @@ def _fig_scatter_insc_mat(tabla: pd.DataFrame) -> go.Figure:
         **_LAYOUT_BASE, legend=_LEGEND,
         xaxis=dict(title="Inscripciones", **_AXIS), yaxis=dict(title="Matrículas", **_AXIS),
     )
-    return fig
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 # ─────────────────────────────────────────────
@@ -957,34 +1090,30 @@ def render(
         else:
             st.caption("Sin histórico suficiente para mostrar la evolución.")
     with st.container(border=True):
-        _panel_title("🔀", "Movilidad de Cuartiles", "Cuartil de matrículas al inicio vs. al final de la ventana — clic en una celda para ver quiénes.", "TRAYECTORIA")
+        _panel_title("🔀", "Movilidad de Cuartiles", "Flujo de asesores entre cuartiles mes a mes, o resumen inicio→fin.", "TRAYECTORIA")
         if filas_evolucion:
-            _render_movilidad(filas_evolucion)
+            _render_movilidad(filas_evolucion, meses_evolucion)
         else:
             st.caption("Sin histórico suficiente.")
 
     _section("C", "DISTRIBUCION")
     with st.container(border=True):
         _panel_title("🧭", "Cuartil de Matrículas por Supervisor", f"Asesores de cada supervisor por cuartil — {periodo_lbl}.", "DISTRIBUCION")
-        if len(tabla_vista): st.plotly_chart(_fig_cuartil_stack(tabla_vista, "SUPERVISOR"), width="stretch", config={"displayModeBar": False})
-        else: st.caption("Sin datos para esta gráfica.")
+        _render_cuartil_stack(tabla_vista, "SUPERVISOR", "cuart_stack_sup")
     with st.container(border=True):
         _panel_title("🧭", "Cuartil de Matrículas por Coordinador", f"Asesores de cada coordinador por cuartil — {periodo_lbl}.", "DISTRIBUCION")
-        if len(tabla_vista): st.plotly_chart(_fig_cuartil_stack(tabla_vista, "COORDINADOR"), width="stretch", config={"displayModeBar": False})
-        else: st.caption("Sin datos para esta gráfica.")
+        _render_cuartil_stack(tabla_vista, "COORDINADOR", "cuart_stack_coord")
 
     _section("D", "DIAGNOSTICO")
     d1, d2 = st.columns(2)
     with d1:
         with st.container(border=True):
-            _panel_title("📊", "Insumo → Inscripción → Matrícula", "Promedio por asesor de cada cuartil, en las tres etapas del embudo.", "EMBUDO")
-            if len(tabla_vista): st.plotly_chart(_fig_embudo_insumo(tabla_vista), width="stretch", config={"displayModeBar": False})
-            else: st.caption("Sin datos.")
+            _panel_title("📊", "Insumo → Inscripción → Matrícula", "Embudo de 3 etapas, agrupable por cuartil, supervisor o coordinador.", "EMBUDO")
+            _render_embudo_insumo(tabla_vista)
     with d2:
         with st.container(border=True):
-            _panel_title("✨", "Inscripciones vs Matrículas", "Cada punto es un asesor · color = cuartil · línea = tendencia general.", "RELACION")
-            if len(tabla_vista): st.plotly_chart(_fig_scatter_insc_mat(tabla_vista), width="stretch", config={"displayModeBar": False})
-            else: st.caption("Sin datos.")
+            _panel_title("✨", "Inscripciones vs Matrículas", "Cada punto es un asesor · color y tamaño configurables · línea = tendencia.", "RELACION")
+            _render_scatter_insc_mat(tabla_vista)
     with st.container(border=True):
         if len(tabla_vista): _render_perfil(tabla_vista, filas_evolucion)
         else: _panel_title("◉", "Perfil de Desempeño", "Cinco dimensiones normalizadas para comparar asesores.", "0–100"); st.caption("Sin datos.")
