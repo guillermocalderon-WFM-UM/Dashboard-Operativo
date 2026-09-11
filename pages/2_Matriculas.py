@@ -785,12 +785,12 @@ def _render_matrix_alerts(base, supervisor, month, is_business_day):
 
 def _render_matrices(base,roster,is_business_day,global_supervisor):
     """`roster` es el universo COMPLETO de supervisores/asesores ACTIVOS (sin
-    recorte de fecha ni de mes, pero excluyendo a quien quedó marcado como
-    retirado — ver `_nombres_inactivos` en _datos.py) — de ahí sale quién aparece
-    en la matriz, para que un asesor activo con cero matriculas en el mes elegido
-    siga la fila en vez de desaparecer, sin resucitar a quien ya no está.
-    `base` (ya filtrada por fecha/mes) sigue siendo la fuente de los valores
-    dia a dia."""
+    recorte de fecha ni de mes, pero excluyendo a quien ya no sale en el
+    directorio del último mes — ver `_tokens_activos_ultimo_mes`/`_marcar_activos`
+    en _datos.py) — de ahí sale quién aparece en la matriz, para que un asesor
+    activo con cero matriculas en el mes elegido siga la fila en vez de
+    desaparecer, sin resucitar a quien ya no está. `base` (ya filtrada por
+    fecha/mes) sigue siendo la fuente de los valores dia a dia."""
     roster_sup=roster[roster["_SUPERVISOR_ACTIVO"]] if "_SUPERVISOR_ACTIVO" in roster else roster
     roster_agent=roster[roster["_ASESOR_ACTIVO"]] if "_ASESOR_ACTIVO" in roster else roster
     months=_available_months(base)

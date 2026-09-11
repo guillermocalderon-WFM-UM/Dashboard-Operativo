@@ -154,15 +154,52 @@ def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
     return serie.map(lambda v: canonico.get(v, v))
 
 
-def _nombres_inactivos(serie_cruda: pd.Series, serie_canonica: pd.Series) -> set[str]:
-    """Nombres canónicos (post `_canonicalizar_nombres`) para los que ALGUNA fila
-    cruda llevó un marcador de estado como "Retiro" (`_MARCADORES_NOMBRE`). Se
-    asume que, una vez marcada como retirada, la persona ya no está activa —
-    aunque tenga filas limpias más antiguas de cuando sí lo estaba. Pensado para
-    excluir del "roster" (quién debe aparecer en una matriz/selector) sin tocar
-    su producción histórica, que sigue contando en el resto del dashboard."""
-    tiene_marcador = serie_cruda.map(lambda v: bool(frozenset(_norm(v).split()) & _MARCADORES_NOMBRE))
-    return set(serie_canonica[tiene_marcador].unique())
+def _tokens_activos_ultimo_mes(directorio_ultimo: pd.DataFrame | None) -> tuple[list, list, list]:
+    """Conjuntos de palabras (uno por persona) presentes en el directorio
+    (sociodemográfico) del ÚLTIMO mes disponible, para Agente/Supervisor/
+    Coordinador. Quien deja de salir en esa hoja es, por definición, un retiro
+    — no importa que tenga producción histórica de cuando sí estaba activo."""
+    vacio: list = []
+    if directorio_ultimo is None or not {"Agente", "Supervisor", "Coordinador"}.issubset(directorio_ultimo.columns):
+        return vacio, vacio, vacio
+
+    def _tokens(columna: pd.Series) -> list[frozenset]:
+        vistos, out = set(), []
+        for v in columna:
+            if not _valido(v):
+                continue
+            t = frozenset(_norm(v).split())
+            if t and t not in vistos:
+                vistos.add(t)
+                out.append(t)
+        return out
+
+    return (
+        _tokens(directorio_ultimo["Agente"]),
+        _tokens(directorio_ultimo["Supervisor"]),
+        _tokens(directorio_ultimo["Coordinador"]),
+    )
+
+
+def _marcar_activos(serie: pd.Series, activos_tokens: list[frozenset]) -> pd.Series:
+    """True si `serie` (ya canonicalizada) coincide con alguien del directorio del
+    último mes: mismo conjunto de palabras, o uno subconjunto del otro (para que
+    'Pablo Velandia' case con 'Pablo Esteban Velandia Latorre'). Sin directorio
+    de referencia (hoja no disponible) no filtra — todos quedan activos."""
+    if not activos_tokens:
+        return pd.Series(True, index=serie.index)
+    cache: dict[str, bool] = {}
+
+    def _activo(v: str) -> bool:
+        if v not in cache:
+            if not v or v == "Sin asignar":
+                cache[v] = False
+            else:
+                t = frozenset(_norm(v).split())
+                cache[v] = bool(t) and any(t <= at or at <= t for at in activos_tokens)
+        return cache[v]
+
+    return serie.map(_activo)
 
 
 def norm_cohorte(valor) -> str:
@@ -453,22 +490,21 @@ def matriculas() -> pd.DataFrame:
     )
 
     # Las hojas de meses distintos no escriben el nombre de asesor/supervisor/
-    # coordinador siempre igual (mayúsculas, tildes, apellido faltante, o con un
-    # marcador de estado como "Retiro" antepuesto) — se consolidan variantes aquí
-    # en vez de en la fuente. Ver `_canonicalizar_nombres`. El marcador también
-    # indica quién ya no está activo (`_nombres_inactivos`) ANTES de perderse al
-    # fusionar — así un roster puede excluir a quien se retiró sin descartar su
-    # producción histórica del resto del dashboard.
-    _asesor_canon = _canonicalizar_nombres(df["_ASESOR"])
-    _sup_canon = _canonicalizar_nombres(df["_SUPERVISOR"])
-    _coord_canon = _canonicalizar_nombres(df["_COORDINADOR"])
-    _asesores_inactivos = _nombres_inactivos(df["_ASESOR"], _asesor_canon)
-    _sups_inactivos = _nombres_inactivos(df["_SUPERVISOR"], _sup_canon)
-    _coords_inactivos = _nombres_inactivos(df["_COORDINADOR"], _coord_canon)
-    df["_ASESOR"], df["_SUPERVISOR"], df["_COORDINADOR"] = _asesor_canon, _sup_canon, _coord_canon
-    df["_ASESOR_ACTIVO"] = ~df["_ASESOR"].isin(_asesores_inactivos)
-    df["_SUPERVISOR_ACTIVO"] = ~df["_SUPERVISOR"].isin(_sups_inactivos)
-    df["_COORDINADOR_ACTIVO"] = ~df["_COORDINADOR"].isin(_coords_inactivos)
+    # coordinador siempre igual (mayúsculas, tildes, apellido faltante) — se
+    # consolidan variantes aquí en vez de en la fuente. Ver `_canonicalizar_nombres`.
+    df["_ASESOR"] = _canonicalizar_nombres(df["_ASESOR"])
+    df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
+    df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
+
+    # "Activo" = sigue apareciendo en el directorio (sociodemográfico) del ÚLTIMO
+    # mes disponible — quien deja de salir ahí es un retiro, sin importar que tenga
+    # producción histórica (que se conserva; solo se excluye del roster de "quién
+    # debe aparecer" en las matrices). `dirs` ya viene ordenado cronológicamente.
+    _dir_ultimo = next((d for d in reversed(dirs) if d is not None), None)
+    _activos_asesor, _activos_sup, _activos_coord = _tokens_activos_ultimo_mes(_dir_ultimo)
+    df["_ASESOR_ACTIVO"] = _marcar_activos(df["_ASESOR"], _activos_asesor)
+    df["_SUPERVISOR_ACTIVO"] = _marcar_activos(df["_SUPERVISOR"], _activos_sup)
+    df["_COORDINADOR_ACTIVO"] = _marcar_activos(df["_COORDINADOR"], _activos_coord)
 
     df["_DOC_ASESOR"] = rec.map(lambda r: r["documento"] if isinstance(r, dict) else "").fillna("")
     df["_CC"] = pd.to_numeric(df["_DOC_ASESOR"], errors="coerce").astype("Int64")
