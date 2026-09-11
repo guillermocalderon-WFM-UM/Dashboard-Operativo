@@ -245,7 +245,7 @@ st.markdown(f"""
 
     .st-key-hdrbanner {{ position:relative;overflow:hidden;
         background:radial-gradient(ellipse 70% 130% at 2% -15%,rgba(14,165,233,0.34),transparent 60%),radial-gradient(ellipse 65% 130% at 100% 120%,rgba(129,140,248,0.34),transparent 60%),linear-gradient(155deg,#071811 0%,#0C2B1D 50%,#061109 100%);
-        border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px 30px;margin-bottom:18px; }}
+        border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px 30px;margin-bottom:10px; }}
     .hb-eyebrow {{ display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);border-radius:99px;padding:5px 13px;margin-bottom:11px;font-size:10px;font-weight:700;color:rgba(255,255,255,0.78);letter-spacing:0.12em;text-transform:uppercase; }}
     .hb-dot {{ width:7px;height:7px;border-radius:50%;background:#34D399;box-shadow:0 0 9px #34D399;animation:sbcPulse 1.8s ease-in-out infinite; }}
     .hb-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:29px;font-weight:700;color:white;margin:0 0 9px;letter-spacing:-0.8px; }}
