@@ -163,56 +163,34 @@ st.markdown(f"""
     @keyframes sbcPulse {{ 0%,100% {{ opacity:1; transform:scale(1); }} 50% {{ opacity:.3; transform:scale(.6); }} }}
     @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(14px); }} to {{ opacity:1; transform:translateY(0); }} }}
     @keyframes ring {{ 0% {{ transform:scale(.85); opacity:.55; }} 100% {{ transform:scale(1.7); opacity:0; }} }}
-    @keyframes shimmer {{ 0% {{ background-position:-200% 0; }} 100% {{ background-position:200% 0; }} }}
-    @keyframes auroraMove {{
-        0%   {{ transform:translate(0,0) scale(1); }}
-        33%  {{ transform:translate(36px,-26px) scale(1.12); }}
-        66%  {{ transform:translate(-26px,22px) scale(0.93); }}
-        100% {{ transform:translate(0,0) scale(1); }} }}
     @keyframes nticker {{ 0% {{ transform:translateX(0); }} 100% {{ transform:translateX(-50%); }} }}
     @media (prefers-reduced-motion:reduce) {{
-        .hero-aurora, .nticker-inner, .hero-title .grad {{ animation:none !important; }} }}
+        .nticker-inner {{ animation:none !important; }} }}
 
     /* ══════════ HERO ══════════ */
-    .hero {{ position:relative;border-radius:26px;overflow:hidden;padding:32px 48px 28px;text-align:center;margin-bottom:16px;
-        background:linear-gradient(135deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
-        border:1px solid rgba(255,255,255,0.11);
-        box-shadow:0 28px 80px -30px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.10);
+    .hero {{ position:relative;overflow:hidden;border-radius:20px;padding:30px 32px;text-align:center;margin-bottom:16px;
+        background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.09);
         animation:fadeUp 0.6s ease both; }}
-    .hero-aurora {{ position:absolute;border-radius:50%;filter:blur(54px);pointer-events:none;z-index:0; }}
-    .ha1 {{ width:400px;height:400px;background:radial-gradient(circle,rgba(14,165,233,0.42),transparent 65%);top:-160px;left:-110px;animation:auroraMove 16s ease-in-out infinite; }}
-    .ha2 {{ width:360px;height:360px;background:radial-gradient(circle,rgba(129,140,248,0.40),transparent 65%);bottom:-170px;right:-80px;animation:auroraMove 20s ease-in-out infinite reverse; }}
-    .ha3 {{ width:250px;height:250px;background:radial-gradient(circle,rgba(52,211,153,0.28),transparent 65%);top:22%;right:14%;animation:auroraMove 24s ease-in-out infinite; }}
+    .hero-glow {{ position:absolute;top:-140px;left:50%;transform:translateX(-50%);width:460px;height:240px;
+        background:radial-gradient(ellipse,rgba(56,189,248,0.16),transparent 70%);pointer-events:none;z-index:0; }}
     .hero-inner {{ position:relative;z-index:1; }}
     .hero-badge {{ display:inline-flex;align-items:center;gap:9px;background:rgba(52,211,153,0.08);
-        border:1px solid rgba(52,211,153,0.28);border-radius:99px;padding:7px 20px;margin-bottom:22px;
-        font-size:10px;font-weight:700;color:rgba(255,255,255,0.80);letter-spacing:0.14em;text-transform:uppercase; }}
+        border:1px solid rgba(52,211,153,0.25);border-radius:99px;padding:6px 18px;margin-bottom:16px;
+        font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.78);letter-spacing:0.13em;text-transform:uppercase; }}
     .hero-badge-dot {{ position:relative;width:8px;height:8px; }}
     .hero-badge-dot::after {{ content:'';position:absolute;inset:0;border-radius:50%;background:#34D399; }}
     .hero-badge-dot::before {{ content:'';position:absolute;inset:0;border-radius:50%;border:2px solid #34D399;animation:ring 1.8s ease-out infinite; }}
-    .hero-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:42px;font-weight:800;color:white;
-        margin:0 0 12px;letter-spacing:-1.6px;line-height:1.04; }}
-    .hero-title .grad {{ background:linear-gradient(90deg,#38BDF8 0%,#818CF8 35%,#34D399 70%,#38BDF8 100%);
-        background-size:220% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-        background-clip:text;animation:shimmer 5s linear infinite; }}
-    .hero-sub {{ font-size:14.5px;color:rgba(255,255,255,0.60);max-width:560px;margin:0 auto;line-height:1.66; }}
-    .hero-divider {{ width:52px;height:1.5px;margin:20px auto 18px;border-radius:2px;
-        background:linear-gradient(90deg,transparent,rgba(56,189,248,0.55),rgba(129,140,248,0.55),transparent); }}
-    .hero-cards {{ display:flex;justify-content:center;gap:10px;flex-wrap:wrap; }}
-    .hcard {{ display:flex;align-items:center;gap:12px;min-width:150px;background:rgba(255,255,255,0.05);
-        border:1px solid rgba(255,255,255,0.09);border-top:2px solid var(--hc,rgba(56,189,248,0.50));
-        border-radius:15px;padding:13px 18px;
-        box-shadow:0 8px 26px -12px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.06);
-        transition:transform .22s cubic-bezier(.2,.8,.2,1),background .22s ease; }}
-    .hcard:hover {{ transform:translateY(-4px);background:rgba(255,255,255,0.09); }}
-    .hcard-ico {{ width:42px;height:42px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-        font-size:19px;background:var(--hc-bg,rgba(56,189,248,0.12));border:1px solid var(--hc,rgba(56,189,248,0.22)); }}
-    .hcard-txt {{ text-align:left; }}
-    .hcard-lbl {{ font-size:8.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
-        color:var(--hc,rgba(56,189,248,0.80));margin-bottom:4px;display:block; }}
-    .hcard-val {{ font-size:14.5px;font-weight:800;color:white;line-height:1;display:block; }}
-    .hcard-val .dot {{ display:inline-block;width:7px;height:7px;border-radius:50%;background:#34D399;
-        box-shadow:0 0 10px #34D399;margin-right:6px;animation:sbcPulse 1.8s ease-in-out infinite; }}
+    .hero-title {{ font-family:'Space Grotesk',sans-serif!important;font-size:38px;font-weight:800;color:white;
+        margin:0 0 12px;letter-spacing:-1.4px;line-height:1.05; }}
+    .hero-sub {{ font-size:13.5px;color:rgba(255,255,255,0.56);max-width:520px;margin:0 auto;line-height:1.6; }}
+    .hero-stats {{ display:flex;justify-content:center;gap:28px;flex-wrap:wrap;margin-top:20px;padding-top:18px;
+        border-top:1px solid rgba(255,255,255,0.08); }}
+    .hero-stat {{ display:flex;flex-direction:column;gap:3px; }}
+    .hero-stat b {{ font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:white;
+        display:flex;align-items:center;justify-content:center;gap:6px; }}
+    .hero-stat span {{ font-size:9px;color:rgba(255,255,255,0.40); }}
+    .hero-stat .dot {{ display:inline-block;width:7px;height:7px;border-radius:50%;background:#34D399;
+        box-shadow:0 0 10px #34D399;animation:sbcPulse 1.8s ease-in-out infinite; }}
 
     /* ══ TICKER ══ */
     .nticker-shell {{ display:flex;align-items:stretch;overflow:hidden;border-radius:14px;
@@ -318,24 +296,23 @@ st.markdown(f"""
         position:relative;border-radius:16px;padding:15px 16px 13px;margin-bottom:12px;overflow:hidden;
         min-height:102px;box-sizing:border-box;
         display:flex;flex-direction:column;
-        background:linear-gradient(160deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.015) 100%);
-        border:1px solid rgba(255,255,255,0.10);border-left:2px solid var(--ac1);
-        transition:border-color .25s ease,background .25s ease;
+        background:rgba(255,255,255,0.03);
+        border:1px solid rgba(255,255,255,0.08);border-left:2px solid var(--ac1);
+        transition:border-color .2s ease,background .2s ease;
     }}
     .st-key-hm_rail_insc  {{ --ac1:#0EA5E9;--icobg:linear-gradient(135deg,rgba(14,165,233,0.28),rgba(99,102,241,0.12));--acbord:rgba(56,189,248,0.5); }}
     .st-key-hm_rail_mat   {{ --ac1:#8B5CF6;--icobg:linear-gradient(135deg,rgba(139,92,246,0.28),rgba(236,72,153,0.12));--acbord:rgba(167,139,250,0.5); }}
     .st-key-hm_rail_cuart {{ --ac1:#34D399;--icobg:linear-gradient(135deg,rgba(52,211,153,0.28),rgba(5,150,105,0.12));--acbord:rgba(52,211,153,0.5); }}
     .st-key-hm_rail_cont  {{ --ac1:#F97316;--icobg:linear-gradient(135deg,rgba(249,115,22,0.28),rgba(245,158,11,0.12));--acbord:rgba(249,115,22,0.5); }}
     .st-key-hm_rail_insc:hover, .st-key-hm_rail_mat:hover, .st-key-hm_rail_cuart:hover, .st-key-hm_rail_cont:hover {{
-        transform:translateY(-2px);border-color:var(--acbord); }}
+        border-color:var(--acbord); }}
     .st-key-hm_rail_insc:has(.ri-on), .st-key-hm_rail_mat:has(.ri-on),
     .st-key-hm_rail_cuart:has(.ri-on), .st-key-hm_rail_cont:has(.ri-on) {{
         border-color:var(--acbord);
-        background:linear-gradient(160deg,rgba(255,255,255,0.11) 0%,rgba(255,255,255,0.03) 100%);
-        box-shadow:0 16px 34px -18px var(--ac1); }}
-    .ri-top {{ display:flex;align-items:center;gap:9px;margin-bottom:9px; }}
-    .ri-ico {{ width:30px;height:30px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;
-        font-size:15px;background:var(--icobg);border:1px solid var(--acbord); }}
+        background:rgba(255,255,255,0.06); }}
+    .ri-top {{ display:flex;align-items:center;gap:10px;margin-bottom:9px; }}
+    .ri-ico {{ width:36px;height:36px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;
+        font-size:15px;background:var(--icobg);border:1px solid color-mix(in srgb,var(--ac1) 35%,transparent); }}
     .ri-name {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:12.5px;color:white;letter-spacing:-0.2px; }}
     .ri-cifra {{ font-family:'Space Grotesk',sans-serif!important;font-weight:700;font-size:17px;color:white;line-height:1;font-variant-numeric:tabular-nums; }}
     .ri-sub {{ font-size:9.5px;color:rgba(255,255,255,0.42);margin-top:3px; }}
@@ -364,12 +341,11 @@ st.markdown(f"""
     /* -- panel de foco -- */
     .hm-focus {{ position:relative;overflow:hidden;border-radius:24px;padding:30px 34px 26px;
         min-height:392px;box-sizing:border-box;
-        background:linear-gradient(160deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.02) 100%);
-        border:1px solid rgba(255,255,255,0.10);border-top:3px solid var(--ac1);
-        box-shadow:0 24px 60px -26px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.08);
+        background:rgba(255,255,255,0.03);
+        border:1px solid rgba(255,255,255,0.09);border-top:2px solid var(--ac1);
         flex:1 1 auto;display:flex;flex-direction:column;animation:fadeUp .4s ease both; }}
-    .hm-focus-glow {{ position:absolute;top:-100px;right:-90px;width:260px;height:260px;border-radius:50%;
-        background:radial-gradient(circle,var(--ac1),transparent 70%);opacity:0.16;pointer-events:none; }}
+    .hm-focus-glow {{ position:absolute;top:-120px;right:-60px;width:320px;height:220px;border-radius:50%;
+        background:radial-gradient(ellipse,var(--ac1),transparent 70%);opacity:0.12;pointer-events:none; }}
     .hm-tag {{ display:inline-flex;align-items:center;gap:7px;font-size:9px;font-weight:800;letter-spacing:0.12em;
         text-transform:uppercase;color:var(--ac1);position:relative;z-index:1; }}
     .hm-tag::before {{ content:'';width:6px;height:6px;border-radius:50%;background:var(--ac1);box-shadow:0 0 8px var(--ac1); }}
@@ -385,7 +361,7 @@ st.markdown(f"""
     .hm-chart span:last-child {{ opacity:0.9; }}
     .hm-feats {{ display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;position:relative;z-index:1; }}
     .hm-feat {{ font-size:11px;color:rgba(255,255,255,0.82);background:var(--icobg);
-        border:1px solid rgba(255,255,255,0.12);padding:6px 12px;border-radius:9px;font-weight:600;
+        border:1px solid rgba(255,255,255,0.09);padding:6px 12px;border-radius:9px;font-weight:600;
         display:inline-flex;align-items:center;gap:7px; }}
     .hm-feat::before {{ content:'';width:5px;height:5px;border-radius:50%;background:var(--ac1);box-shadow:0 0 6px var(--ac1);flex-shrink:0; }}
 
@@ -416,36 +392,17 @@ def _barras(serie, n=18):
 # ── HERO ─────────────────────────────────
 st.markdown("""
 <div class='hero'>
-    <div class='hero-aurora ha1'></div>
-    <div class='hero-aurora ha2'></div>
-    <div class='hero-aurora ha3'></div>
+    <div class='hero-glow'></div>
     <div class='hero-inner'>
         <div class='hero-badge'><span class='hero-badge-dot'></span>Centro de Control · Uniminuto · 2026</div>
-        <div class='hero-title'>Dashboard<br><span class='grad'>Operativo</span></div>
+        <div class='hero-title'>Dashboard Operativo</div>
         <div class='hero-sub'>Plataforma de análisis del proceso comercial y académico.
         Inscripciones, matrículas, cuartiles y real&nbsp;time desde una sola base consolidada.</div>
-        <div class='hero-divider'></div>
-        <div class='hero-cards'>
-            <div class='hcard' style='--hc:rgba(52,211,153,0.70);--hc-bg:rgba(52,211,153,0.13)'>
-                <div class='hcard-ico'>⚡</div>
-                <div class='hcard-txt'><span class='hcard-lbl'>Estado del sistema</span>
-                <span class='hcard-val'><span class='dot'></span>En línea</span></div>
-            </div>
-            <div class='hcard' style='--hc:rgba(56,189,248,0.70);--hc-bg:rgba(56,189,248,0.13)'>
-                <div class='hcard-ico'>◈</div>
-                <div class='hcard-txt'><span class='hcard-lbl'>Seguimiento</span>
-                <span class='hcard-val'>Por asesor</span></div>
-            </div>
-            <div class='hcard' style='--hc:rgba(129,140,248,0.70);--hc-bg:rgba(129,140,248,0.13)'>
-                <div class='hcard-ico'>◷</div>
-                <div class='hcard-txt'><span class='hcard-lbl'>Período activo</span>
-                <span class='hcard-val'>2026</span></div>
-            </div>
-            <div class='hcard' style='--hc:rgba(245,158,11,0.70);--hc-bg:rgba(245,158,11,0.13)'>
-                <div class='hcard-ico'>✦</div>
-                <div class='hcard-txt'><span class='hcard-lbl'>Alianza</span>
-                <span class='hcard-val'>Uniminuto</span></div>
-            </div>
+        <div class='hero-stats'>
+            <div class='hero-stat'><b><span class='dot'></span>En línea</b><span>Estado del sistema</span></div>
+            <div class='hero-stat'><b>Por asesor</b><span>Seguimiento</span></div>
+            <div class='hero-stat'><b>2026</b><span>Período activo</span></div>
+            <div class='hero-stat'><b>Uniminuto</b><span>Alianza</span></div>
         </div>
     </div>
 </div>

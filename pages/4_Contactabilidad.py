@@ -257,16 +257,13 @@ st.markdown(f"""
     .st-key-hdrbanner [data-testid="stButton"] > button:hover {{ color:#EAF2FF !important;border-color:rgba(125,211,252,0.42) !important; }}
     .st-key-hdrbanner [data-testid="stButton"] > button[kind="primary"] {{ color:#F4F9FF !important;border:1px solid rgba(56,189,248,0.55) !important;background:linear-gradient(180deg,rgba(56,189,248,0.30),rgba(59,130,246,0.16)) !important; }}
 
-    .kpi-card {{ background:linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02));border-radius:20px;padding:20px 20px 16px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 20px 44px -18px rgba(0,0,0,0.7);position:relative;overflow:hidden;min-height:140px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .24s ease,border-color .24s ease; }}
-    .kpi-card:hover {{ transform:translateY(-6px);border-color:var(--kc,{COLOR_ACCENT}); }}
-    .kpi-card::before {{ content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--kc,{COLOR_ACCENT}); }}
-    .kpi-card::after {{ content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;background:radial-gradient(circle,var(--kc,{COLOR_ACCENT}),transparent 70%);opacity:0.18;border-radius:50%; }}
-    .kpi-bg-icon {{ position:absolute;bottom:12px;right:16px;font-size:44px;opacity:0.10;line-height:1; }}
-    .kpi-label {{ font-size:10px;color:rgba(255,255,255,0.50);font-weight:700;text-transform:uppercase;letter-spacing:0.10em; }}
-    .kpi-value {{ font-family:'Space Grotesk',sans-serif!important;font-size:29px;font-weight:700;line-height:1.1;margin:9px 0 4px;letter-spacing:-0.5px; }}
-    .kpi-sub {{ font-size:11px;color:rgba(255,255,255,0.42); }}
-    .kpi-bar-wrap {{ background:rgba(255,255,255,0.09);border-radius:99px;height:5px;margin-top:10px;overflow:hidden; }}
-    .kpi-bar-fill {{ height:5px;border-radius:99px; }}
+    .kpi-card {{ background:rgba(255,255,255,0.035);border-radius:16px;padding:18px 10px 15px;border:1px solid rgba(255,255,255,0.08);position:relative;text-align:center; }}
+    .kpi-bg-icon {{ width:36px;height:36px;margin:0 auto 11px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;color:var(--kc,{COLOR_ACCENT});background:linear-gradient(150deg,color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 24%,transparent),color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 6%,transparent));border:1px solid color-mix(in srgb,var(--kc,{COLOR_ACCENT}) 35%,transparent); }}
+    .kpi-value {{ font-family:'Space Grotesk',sans-serif!important;font-size:22px;font-weight:700;line-height:1; }}
+    .kpi-label {{ font-size:8px;color:rgba(255,255,255,0.42);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-top:7px; }}
+    .kpi-sub {{ font-size:7.5px;color:rgba(255,255,255,0.28);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }}
+    .kpi-bar-wrap {{ background:rgba(255,255,255,0.08);border-radius:99px;height:3px;margin-top:9px;overflow:hidden; }}
+    .kpi-bar-fill {{ height:3px;border-radius:99px; }}
 
     .sec-header {{ background:radial-gradient(ellipse at 12% 35%,rgba(255,255,255,0.18),transparent 55%),var(--sc,{COLOR_PRIMARY});border-radius:20px;padding:20px 26px;margin:32px 0 16px;display:flex;align-items:center;gap:16px;border:1px solid rgba(255,255,255,0.14);position:relative;overflow:hidden; }}
     .sec-header::after {{ content:'';position:absolute;right:-35px;bottom:-45px;width:150px;height:150px;background:rgba(255,255,255,0.07);border-radius:50%; }}
@@ -356,33 +353,33 @@ k1, k2, k3, k4 = st.columns(4)
 with k1:
     st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_ACCENT}'>
         <div class='kpi-bg-icon'>📞</div>
-        <div><div class='kpi-label'>Llamadas gestionadas</div>
         <div class='kpi-value' style='color:#7DD3FC'>{_tot:,}</div>
-        <div class='kpi-sub'>{_tot_marcadas:,} marcadas en total (incl. no encontrado)</div></div>
+        <div class='kpi-label'>Llamadas gestionadas</div>
+        <div class='kpi-sub'>{_tot_marcadas:,} marcadas en total</div>
         {kpi_bar(_tot / _tot_marcadas * 100 if _tot_marcadas else 0, COLOR_ACCENT)}
     </div>""", unsafe_allow_html=True)
 with k2:
     st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_SUCCESS}'>
         <div class='kpi-bg-icon'>✅</div>
-        <div><div class='kpi-label'>Contacto efectivo</div>
         <div class='kpi-value' style='color:{COLOR_SUCCESS}'>{_efectivas:,}</div>
-        <div class='kpi-sub'>{_pct_efec:.1f}% de las llamadas</div></div>
+        <div class='kpi-label'>Contacto efectivo</div>
+        <div class='kpi-sub'>{_pct_efec:.1f}% de las llamadas</div>
         {kpi_bar(_pct_efec, COLOR_SUCCESS)}
     </div>""", unsafe_allow_html=True)
 with k3:
     st.markdown(f"""<div class='kpi-card' style='--kc:#818CF8'>
         <div class='kpi-bg-icon'>🎯</div>
-        <div><div class='kpi-label'>Efectivo Interesado</div>
         <div class='kpi-value' style='color:#818CF8'>{_interesados:,}</div>
-        <div class='kpi-sub'>contactos con interés</div></div>
+        <div class='kpi-label'>Efectivo Interesado</div>
+        <div class='kpi-sub'>contactos con interés</div>
         {kpi_bar(_interesados / max(_efectivas, 1) * 100, "#818CF8")}
     </div>""", unsafe_allow_html=True)
 with k4:
     st.markdown(f"""<div class='kpi-card' style='--kc:{COLOR_WARNING}'>
         <div class='kpi-bg-icon'>👥</div>
-        <div><div class='kpi-label'>Asesores en gestión</div>
         <div class='kpi-value' style='color:{COLOR_WARNING}'>{_asesores_activos}</div>
-        <div class='kpi-sub'>tiempo en llamadas: {_hms(_seg_llamadas)}</div></div>
+        <div class='kpi-label'>Asesores en gestión</div>
+        <div class='kpi-sub'>tiempo en llamadas: {_hms(_seg_llamadas)}</div>
         {kpi_bar(_asesores_activos, COLOR_WARNING)}
     </div>""", unsafe_allow_html=True)
 
