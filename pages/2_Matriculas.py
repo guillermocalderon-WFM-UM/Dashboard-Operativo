@@ -475,7 +475,7 @@ def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
         )
     xaxis = {**AXIS, "tickformat": "%d %b", "nticks": 16} if granularity == "Diario" else {**AXIS, "categoryorder": "array", "categoryarray": order}
     ytitle = "Brecha" if view == "Brecha" else ("Matriculas acumuladas" if reference == "Meta acumulada al corte" and granularity == "Diario" else "Matriculas")
-    fig.update_layout(**_layout(455, margin=dict(l=52, r=28, t=12, b=45)), showlegend=True, hovermode="closest", xaxis=xaxis, yaxis={**AXIS, "title": ytitle})
+    fig.update_layout(**_layout(455, margin=dict(l=52, r=28, t=12, b=45)), showlegend=False, hovermode="closest", xaxis=xaxis, yaxis={**AXIS, "title": ytitle})
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
