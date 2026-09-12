@@ -1,6 +1,7 @@
 import base64
 import calendar
 import html
+import io
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -22,6 +23,31 @@ COLOR_ACCENT  = "#0EA5E9"
 COLOR_SUCCESS = "#10B981"
 COLOR_WARNING = "#F59E0B"
 COLOR_DANGER  = "#EF4444"
+
+
+# ─────────────────────────────────────────────
+# DESCARGA (idéntico a Inscripciones / Dashboard WFM)
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def _excel_bytes(df):
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False, engine="openpyxl")
+    return buf.getvalue()
+
+
+def df_descarga(df, nombre_archivo, **kwargs):
+    st.dataframe(df, **kwargs)
+    b64 = base64.b64encode(_excel_bytes(df)).decode()
+    st.markdown(
+        f'<div style="text-align:right;margin-top:-6px;margin-bottom:8px">'
+        f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" '
+        f'download="{nombre_archivo}" '
+        f'style="font-size:0.72rem;color:rgba(255,255,255,0.35);text-decoration:none;letter-spacing:0.03em" '
+        f'onmouseover="this.style.color=\'rgba(255,255,255,0.75)\'" '
+        f'onmouseout="this.style.color=\'rgba(255,255,255,0.35)\'">'
+        f'↓ Exportar Excel</a></div>',
+        unsafe_allow_html=True,
+    )
 
 _MES_ORDEN = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -1018,6 +1044,46 @@ def _render_predictive(base,metas,start,end,is_business_day,meta_agents=None):
         st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
 
 
+_COLS_DETALLE = {
+    "ID": "ID MATRÍCULA",
+    "NOMBRE_COMPLETO": "NOMBRE", "Cedula": "CEDULA", "Programa": "PROGRAMA",
+    "Nivel Formación": "NIVEL", "COHORTE": "COHORTE", "PERIODO ACADEMICO": "PERIODO ACADÉMICO",
+    "_ASESOR": "EXPERTO", "_SUPERVISOR": "SUPERVISOR", "_COORDINADOR": "COORDINADOR",
+    "Fecha Contabilización": "FECHA CONTABILIZACIÓN",
+}
+
+
+def _render_detalle(base: pd.DataFrame) -> None:
+    """Listado de matrículas filtradas, uno a uno, descargable en Excel. Oculto por
+    defecto — la tabla completa (y su export) es pesada, así que se construye solo
+    al pulsar el botón, igual que la Matriz diaria por Asesor protege el rendimiento
+    de la página evitando armar contenido pesado hasta que el usuario lo pide."""
+    _panel_title("🔎", "Detalle", "Listado de matrículas filtradas, descargable en Excel.", f"{len(base)} MATRICULAS")
+    key = "mat_v2_detalle_visible"
+    visible = st.session_state.get(key, False)
+    etiqueta = "🙈  Ocultar listado de matrículas" if visible else "👁️  Ver listado de matrículas"
+    if st.button(etiqueta, key="mat_v2_detalle_toggle", type="primary"):
+        st.session_state[key] = not visible
+    if not st.session_state.get(key, False):
+        return
+
+    detalle = base.copy()
+    if "ID" in detalle.columns:
+        # "ID" viene de la hoja "Base" (nº de matrícula). Se muestra como texto plano
+        # para evitar separadores de miles / notación científica en la tabla y el Excel.
+        detalle["ID"] = pd.to_numeric(detalle["ID"], errors="coerce").astype("Int64").astype("string").fillna("")
+    detalle = detalle[[c for c in _COLS_DETALLE if c in detalle.columns]].rename(columns=_COLS_DETALLE)
+    st.markdown(f"""<div class='tbl-hdr' style='background:linear-gradient(135deg,#0C2B1D,#0EA5E9)'>
+        <span class='tbl-hdr-icon'>📑</span>
+        <div class='tbl-hdr-body'>
+            <div class='tbl-hdr-title'>Listado de Matrículas</div>
+            <div class='tbl-hdr-desc'>Registros individuales — cohorte y período seleccionados</div>
+        </div>
+        <span class='tbl-hdr-badge'>{len(detalle)} matrículas</span>
+    </div>""", unsafe_allow_html=True)
+    df_descarga(detalle, "matriculas_detalle.xlsx", width="stretch", hide_index=True, height=360)
+
+
 def _number_es(value: float) -> str:
     return f"{value:,.0f}".replace(",", ".")
 
@@ -1154,6 +1220,8 @@ def render(base, metas, fecha_ini, fecha_fin, tabla, total_general, render_table
     with st.container(border=True): _render_analysis(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_projection(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
     with st.container(border=True): _render_predictive(d,metas,fecha_ini,fecha_fin,is_business_day,meta_agents)
+    _section("F", "DETALLE")
+    with st.container(border=True): _render_detalle(d)
 
 
 # ─────────────────────────────────────────────
