@@ -119,7 +119,7 @@ def _valido(s) -> bool:
 _MARCADORES_NOMBRE = {"retiro", "retirado", "retirada", "inactivo", "inactiva"}
 
 
-def _canonicalizar_nombres(serie: pd.Series) -> pd.Series:
+def canonicalizar_nombres(serie: pd.Series) -> pd.Series:
     """Fusiona variantes del mismo nombre que llegan distintas entre hojas mensuales
     (mayúsculas/tildes distintas, un apellido de menos, o con un marcador de estado
     como 'Retiro' antepuesto) SIN tocar la fuente: agrupa por el conjunto de palabras
@@ -499,10 +499,10 @@ def matriculas() -> pd.DataFrame:
 
     # Las hojas de meses distintos no escriben el nombre de asesor/supervisor/
     # coordinador siempre igual (mayúsculas, tildes, apellido faltante) — se
-    # consolidan variantes aquí en vez de en la fuente. Ver `_canonicalizar_nombres`.
-    df["_ASESOR"] = _canonicalizar_nombres(df["_ASESOR"])
-    df["_SUPERVISOR"] = _canonicalizar_nombres(df["_SUPERVISOR"])
-    df["_COORDINADOR"] = _canonicalizar_nombres(df["_COORDINADOR"])
+    # consolidan variantes aquí en vez de en la fuente. Ver `canonicalizar_nombres`.
+    df["_ASESOR"] = canonicalizar_nombres(df["_ASESOR"])
+    df["_SUPERVISOR"] = canonicalizar_nombres(df["_SUPERVISOR"])
+    df["_COORDINADOR"] = canonicalizar_nombres(df["_COORDINADOR"])
 
     # "Quién estaba activo" se resuelve por MES contra el directorio de ese mes
     # (ver `roster_matriculas_por_mes`), no aquí: alguien activo en enero pero no

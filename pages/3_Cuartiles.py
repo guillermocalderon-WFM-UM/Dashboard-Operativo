@@ -231,6 +231,13 @@ def _tabla_clasificacion(mes_sel: str, mes_corte: str | None = None, dia_corte: 
     tabla["SUPERVISOR"] = tabla["_SUPERVISOR_MAT"].fillna(tabla["_SUPERVISOR_INSC"]).fillna(tabla["_SUPERVISOR_META"]).fillna("Sin asignar")
     tabla["COORDINADOR"] = tabla["_COORDINADOR_MAT"].fillna(tabla["_COORDINADOR_INSC"]).fillna("Sin asignar")
 
+    # Matrículas trae el supervisor/coordinador ya resuelto contra el directorio; la
+    # columna cruda de Inscripciones a veces llega más corta ("Tatiana Martinez" en vez
+    # de "Tatiana Martinez Quintero"). Se consolidan las variantes de esta tabla en la
+    # forma más completa — mismo criterio que usa Matrículas en _datos.py.
+    tabla["SUPERVISOR"] = _datos.canonicalizar_nombres(tabla["SUPERVISOR"])
+    tabla["COORDINADOR"] = _datos.canonicalizar_nombres(tabla["COORDINADOR"])
+
     tabla["CUMPL_INSC"] = np.where(
         tabla["META_INSC"] > 0, tabla["REAL_INSC"] / tabla["META_INSC"] * 100,
         np.where(tabla["REAL_INSC"] > 0, 100.0, 0.0),
@@ -265,6 +272,12 @@ def _tabla_periodo(mes_sel: str, meses_ventana: tuple, mes_corte: str | None = N
     if not partes:
         return pd.DataFrame(columns=_COLS_CLASIFICACION)
     allp = pd.concat(partes, ignore_index=True)
+    # Cada mes ya viene canonicalizado por separado (_tabla_clasificacion), pero la forma
+    # "ganadora" puede variar de un mes a otro si un mes no trae la variante completa. Se
+    # vuelve a consolidar sobre el conjunto de los 6 meses, que sí suele traerla, para que
+    # el "first" de abajo no herede una forma corta por casualidad del orden de los meses.
+    allp["SUPERVISOR"] = _datos.canonicalizar_nombres(allp["SUPERVISOR"])
+    allp["COORDINADOR"] = _datos.canonicalizar_nombres(allp["COORDINADOR"])
     t = allp.groupby("ASESOR", as_index=False).agg(
         SUPERVISOR=("SUPERVISOR", "first"), COORDINADOR=("COORDINADOR", "first"),
         META_INSC=("META_INSC", "sum"), META_MAT=("META_MAT", "sum"),
@@ -303,6 +316,21 @@ def _tabla_evolucion_reciente(meses_recientes: tuple, mes_corte: str | None = No
             CUARTIL=("CUARTIL", "first"),
             CUARTIL_INSC=("CUARTIL_INSC", "first"),
         )
+
+    # Igual que en _tabla_periodo: se consolidan las variantes de supervisor/coordinador
+    # sobre el conjunto de TODOS los meses de la ventana (más variantes disponibles = mejor
+    # forma canónica), no mes a mes — si no, cada mes podría "ganar" una forma distinta.
+    if tablas_mes:
+        _sup_all = pd.concat([t["SUPERVISOR"] for t in tablas_mes.values()])
+        _coord_all = pd.concat([t["COORDINADOR"] for t in tablas_mes.values()])
+        _sup_all = _datos.canonicalizar_nombres(_sup_all)
+        _coord_all = _datos.canonicalizar_nombres(_coord_all)
+        _i = 0
+        for t in tablas_mes.values():
+            n = len(t)
+            t["SUPERVISOR"] = _sup_all.iloc[_i:_i + n].values
+            t["COORDINADOR"] = _coord_all.iloc[_i:_i + n].values
+            _i += n
 
     todos_asesores = set()
     for t in tablas_mes.values():
