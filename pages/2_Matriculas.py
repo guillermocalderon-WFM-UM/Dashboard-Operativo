@@ -1063,8 +1063,14 @@ def _render_detalle(base: pd.DataFrame) -> None:
     visible = st.session_state.get(key, False)
     etiqueta = "🙈  Ocultar listado de matrículas" if visible else "👁️  Ver listado de matrículas"
     if st.button(etiqueta, key="mat_v2_detalle_toggle", type="primary"):
+        # Sin rerun explícito, el botón dibujado en ESTE mismo run ya quedaría con la
+        # etiqueta vieja (calculada antes del clic) mientras la tabla de abajo refleja
+        # el estado nuevo — texto y contenido desincronizados por una corrida. Forzando
+        # el rerun aquí, la próxima corrida arranca ya con el estado nuevo y dibuja
+        # botón + tabla consistentes entre sí.
         st.session_state[key] = not visible
-    if not st.session_state.get(key, False):
+        st.rerun()
+    if not visible:
         return
 
     detalle = base.copy()
