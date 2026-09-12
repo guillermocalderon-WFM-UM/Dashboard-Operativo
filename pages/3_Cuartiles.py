@@ -263,7 +263,13 @@ def _tabla_periodo(mes_sel: str, meses_ventana: tuple, mes_corte: str | None = N
     """Igual que `_tabla_clasificacion` pero soporta mes_sel == 'Todos': SUMA
     matrículas/inscripciones/meta/insumo de cada asesor en la ventana de meses y
     recalcula cuartiles sobre ese total. El recorte por día solo afecta a `mes_corte`;
-    los demás meses de la ventana se cuentan completos."""
+    los demás meses de la ventana se cuentan completos.
+
+    El universo y el supervisor/coordinador de cada asesor se toman del roster de
+    `mes_corte` (Meta asignada ese mes) — no de la unión de los 6 meses — para que
+    quien ya rotó de rol o se retiró no aparezca como "activo", y para que a quien sí
+    sigue activo no se le muestre el supervisor de un mes viejo de la ventana si
+    cambió en el camino (el histórico de producción sí suma los 6 meses completos)."""
     if mes_sel != "Todos":
         return _tabla_clasificacion(mes_sel, mes_corte, dia_corte)
 
@@ -279,12 +285,32 @@ def _tabla_periodo(mes_sel: str, meses_ventana: tuple, mes_corte: str | None = N
     allp["SUPERVISOR"] = _datos.canonicalizar_nombres(allp["SUPERVISOR"])
     allp["COORDINADOR"] = _datos.canonicalizar_nombres(allp["COORDINADOR"])
     t = allp.groupby("ASESOR", as_index=False).agg(
-        SUPERVISOR=("SUPERVISOR", "first"), COORDINADOR=("COORDINADOR", "first"),
         META_INSC=("META_INSC", "sum"), META_MAT=("META_MAT", "sum"),
         REAL_INSC=("REAL_INSC", "sum"), REAL_MAT=("REAL_MAT", "sum"), INSUMO=("INSUMO", "sum"),
     )
     for c in ("META_INSC", "META_MAT", "REAL_INSC", "REAL_MAT", "INSUMO"):
         t[c] = t[c].round().astype(int)
+
+    # El universo de "Todos" es la UNIÓN de asesores con Meta en cualquiera de los 6 meses
+    # de la ventana, así que arrastra gente que ya rotó de rol o se retiró (ej. formadores
+    # con una sola matrícula histórica) — y a los que sí siguen activos les pegaba el
+    # supervisor/coordinador del PRIMER mes de la ventana en el que aparecían (`first` sobre
+    # el concat cronológico), no el actual, si cambiaron de supervisor en el camino. Ambas
+    # cosas se resuelven igual: el supervisor/coordinador y el universo de "activo" salen
+    # SIEMPRE del mes de corte (por defecto el más reciente) — quien no tiene Meta ahí ya
+    # no está activo hoy — y los cuartiles se recalculan sobre ese universo actual.
+    if mes_corte:
+        _actual = (
+            _tabla_clasificacion(mes_corte, None, None)[["ASESOR", "SUPERVISOR", "COORDINADOR"]]
+            .drop_duplicates("ASESOR")
+        )
+        t = t.merge(_actual, on="ASESOR", how="inner")
+        if not len(t):
+            return pd.DataFrame(columns=_COLS_CLASIFICACION)
+    else:
+        t["SUPERVISOR"] = allp.groupby("ASESOR")["SUPERVISOR"].first().reindex(t["ASESOR"]).values
+        t["COORDINADOR"] = allp.groupby("ASESOR")["COORDINADOR"].first().reindex(t["ASESOR"]).values
+
     t["CUMPL_INSC"] = np.where(t["META_INSC"] > 0, t["REAL_INSC"] / t["META_INSC"] * 100,
                                np.where(t["REAL_INSC"] > 0, 100.0, 0.0))
     t["CUMPL_MAT"] = np.where(t["META_MAT"] > 0, t["REAL_MAT"] / t["META_MAT"] * 100,
