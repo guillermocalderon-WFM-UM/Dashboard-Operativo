@@ -411,7 +411,7 @@ def _meta_by_supervisor(
 ) -> pd.DataFrame:
     m = _meta_rows(metas, supervisors, months, agents)
     if m.empty:
-        return pd.DataFrame(columns=["_SUP", "_MONTH", "META"])
+        return pd.DataFrame({"_SUP": pd.Series(dtype=str), "_MONTH": pd.Series(dtype=str), "META": pd.Series(dtype=float)})
     if "AÑO" not in m:
         m["AÑO"] = end.year
     if reference == "Meta acumulada al corte":
@@ -551,13 +551,18 @@ def _render_supervisor(base, metas, start, end, is_business_day, global_agents):
         metric_data["METRIC"] = metric
         metric_frames.append(metric_data)
     d = pd.concat(metric_frames, ignore_index=True)
+    d["META"] = pd.to_numeric(d["META"], errors="coerce")
+    d["REAL"] = pd.to_numeric(d["REAL"], errors="coerce")
     if reference == "Sin meta":
         d["META"] = np.nan
     elif granularity == "Mensual":
         d["META"] = d["META"].fillna(0)
     d["LOW"] = d["META"] * .9; d["HIGH"] = d["META"] * 1.1
     d["GAP"] = d["REAL"] - d["META"]
-    d["PCT"] = np.where(d["META"] > 0, d["REAL"] / d["META"] * 100, np.nan)
+    # META se reemplaza por NaN donde es 0 antes de dividir para no depender
+    # de que np.where evalúe ambas ramas sin dividir por cero.
+    safe_meta = d["META"].where(d["META"] > 0)
+    d["PCT"] = d["REAL"] / safe_meta * 100
     d["STATUS"] = [_status(r, m) for r, m in zip(d["REAL"], d["META"])]
     fig = go.Figure()
     color_by_supervisor = {sup: PALETTE[i % len(PALETTE)] for i, sup in enumerate(selected)}
